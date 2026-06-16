@@ -37,7 +37,7 @@ terraform {
 # should use secure mecahnisms like vault
 
 provider "gigamon" {
-  fm_address = "10.114.202.120"
+  fm_address = "10.114.50.20"
 
   # skip_verify is default false, which implies that the certificate presented by FM must be
   # a valid certificate and will be verified. For demo purpose this is skipped, but should not
@@ -47,7 +47,7 @@ provider "gigamon" {
   # this token is generated using FM API, via  the user management section. For best
   # security rotate this token often and also use mecahnisms like vault to prevent exposing
   # this in plain text in the configuration files
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiOTIxNjgzMDk0MjA0ODQ3NSIsInN1YiI6InRmLXRva2VuIiwiaWF0IjoxNzYyMzMwMjk4LCJleHAiOjE3NjQ5MjIyOTh9.WPPhWxx_MeG40RgIJYZVm0zt1v-ahyutPRQzUVWVf_0"
+  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiNDYxMDgyNDM1NDEzOTY5NCIsInN1YiI6Imdtb2hhbiIsImlhdCI6MTc4MTUxMjMyMywiZXhwIjoxNzg0MTA0MzIzfQ.mlP_dTGCIB42Y3PjpwoH6iKdlxFjDPktDBmdl1WFDhU"
 }
 
 import {

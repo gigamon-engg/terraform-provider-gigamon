@@ -4,6 +4,8 @@ go 1.26.2
 
 require github.com/hashicorp/terraform-plugin-framework v1.19.0
 
+require github.com/hashicorp/terraform-plugin-framework-validators v0.19.0
+
 require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
