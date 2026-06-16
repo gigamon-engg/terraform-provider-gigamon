@@ -91,6 +91,11 @@ func (tm *TrafficMap) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
+	if data.Asf != nil && data.Asf.AsfProfileConfig == nil {
+		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+
 	trafficMap := ModelMapToGoMap(ctx, &data)
 	updateReq := commonutils.UpdateReq{
 		Requests: []commonutils.UpdateObject{
@@ -180,6 +185,11 @@ func (tm *TrafficMap) Update(ctx context.Context, req resource.UpdateRequest, re
 	resp.Diagnostics.Append(req.State.Get(ctx, &stateData)...)
 
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if planData.Asf != nil && planData.Asf.AsfProfileConfig == nil {
+		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
 		return
 	}
 

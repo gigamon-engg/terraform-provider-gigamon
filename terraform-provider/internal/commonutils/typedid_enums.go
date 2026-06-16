@@ -36,6 +36,7 @@ const (
 	TypeSlicing         Type = "slicing"
 	TypeHeaderStripping Type = "headerStripping"
 	TypeLoadBalancing   Type = "loadBalancing"
+	TypeAmi             Type = "ami"
 	TypeAmx             Type = "amx"
 )
 

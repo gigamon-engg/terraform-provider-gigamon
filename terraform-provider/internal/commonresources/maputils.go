@@ -7,6 +7,7 @@ package commonresources
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -207,10 +209,34 @@ type MacFilterListModel struct {
 	Pass []MacFilterEntryModel `tfsdk:"pass"`
 }
 
+type AsfSessionFieldModel struct {
+	Pos  types.Int32  `tfsdk:"pos"`
+	Type types.String `tfsdk:"type"`
+}
+
+type AsfBufferingModel struct {
+	Enabled                types.Bool   `tfsdk:"enabled"`
+	Protocol               types.String `tfsdk:"protocol"`
+	BufferCountBeforeMatch types.Int32  `tfsdk:"buffer_count_before_match"`
+}
+
+type AsfProfileConfigModel struct {
+	SessionFields []AsfSessionFieldModel `tfsdk:"session_fields"`
+	Timeout       types.Int32            `tfsdk:"timeout"`
+	PacketCount   types.Int32            `tfsdk:"packet_count"`
+	Bidi          types.Bool             `tfsdk:"bidi"`
+	Buffering     *AsfBufferingModel     `tfsdk:"buffering"`
+}
+
+type AsfModel struct {
+	AsfProfileConfig *AsfProfileConfigModel `tfsdk:"asf_profile_config"`
+}
+
 // MapModel, consists of a set of rulesets and an ID that is got from FM
 type MapModel struct {
 	Name                types.String       `tfsdk:"name"`
 	Description         types.String       `tfsdk:"description"`
+	Asf                 *AsfModel          `tfsdk:"asf"`
 	RuleSets            []RuleSetModel     `tfsdk:"rule_sets"`
 	MonitoringSessionId types.String       `tfsdk:"monitoring_session_id"`
 	Id                  types.String       `tfsdk:"id"`
@@ -364,6 +390,7 @@ type MacFilterListGo struct {
 type MapGo struct {
 	Name          string           `json:"name,omitempty"`
 	Comment       string           `json:"comment,omitempty"`
+	Asf           any              `json:"asf,omitempty"`
 	Enable        bool             `json:"enable,omitempty"`
 	RuleSets      []RuleSetGo      `json:"ruleSets,omitempty"`
 	MacFilterList *MacFilterListGo `json:"macFilterList,omitempty"`
@@ -1396,6 +1423,37 @@ func MapSchema() schema.Schema {
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
+			"asf": schema.SingleNestedAttribute{
+				MarkdownDescription: "Typed ASF configuration for AFI traffic map behavior.",
+				Optional:            true,
+				Attributes: map[string]schema.Attribute{
+					"asf_profile_config": schema.SingleNestedAttribute{
+						Optional: true,
+						Attributes: map[string]schema.Attribute{
+							"session_fields": schema.ListNestedAttribute{
+								Optional: true,
+								NestedObject: schema.NestedAttributeObject{
+									Attributes: map[string]schema.Attribute{
+										"pos":  schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.AtLeast(0)}},
+										"type": schema.StringAttribute{Required: true},
+									},
+								},
+							},
+							"timeout":      schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.AtLeast(1)}},
+							"packet_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(30), Validators: []validator.Int32{int32validator.AtLeast(1)}},
+							"bidi":         schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
+							"buffering": schema.SingleNestedAttribute{
+								Optional: true,
+								Attributes: map[string]schema.Attribute{
+									"enabled":                   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
+									"protocol":                  schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("tcpUdp")},
+									"buffer_count_before_match": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(20), Validators: []validator.Int32{int32validator.AtLeast(1)}},
+								},
+							},
+						},
+					},
+				},
+			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Name for this map",
 				Required:            true,
@@ -1791,6 +1849,12 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 		Id:       rawID,
 	}
 
+	if data.Asf != nil {
+		if asf := asfModelToAny(data.Asf); asf != nil {
+			goMap.Asf = asf
+		}
+	}
+
 	// Copy over the elements of the map
 	for _, modelRuleSet := range data.RuleSets {
 		goRuleSet := RuleSetGo{
@@ -1921,6 +1985,9 @@ func GetMSMapData(
 
 			// copy macFilterList from FM into TF model
 			modelMap.MacFilterList = GoMacFilterListToModel(fmMap.MacFilterList)
+			if fmMap.Asf != nil {
+				modelMap.Asf = anyToAsfModel(fmMap.Asf)
+			}
 
 			for _, goRuleSet := range fmMap.RuleSets {
 				modelRuleSet := RuleSetModel{
@@ -1975,10 +2042,134 @@ func getMapModel(fmMap *MapGo) *MapModel {
 	return &MapModel{
 		Name:        types.StringValue(fmMap.Name),
 		Description: description,
+		Asf:         nil,
 		Id:          types.StringValue(fmMap.Id),
 		RuleSets:    make([]RuleSetModel, 0),
 		// MacFilterList will be filled by GoMacFilterListToModel
 	}
+}
+
+type asfSessionFieldGo struct {
+	Pos  int32  `json:"pos,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
+type asfBufferingGo struct {
+	Enabled                *bool  `json:"enabled,omitempty"`
+	Protocol               string `json:"protocol,omitempty"`
+	BufferCountBeforeMatch *int32 `json:"bufferCountBeforeMatch,omitempty"`
+}
+
+type asfProfileConfigGo struct {
+	SessionFields []asfSessionFieldGo `json:"sessionFields,omitempty"`
+	Timeout       *int32              `json:"timeout,omitempty"`
+	PacketCount   *int32              `json:"packetCount,omitempty"`
+	Bidi          *bool               `json:"bidi,omitempty"`
+	Buffering     *asfBufferingGo     `json:"buffering,omitempty"`
+}
+
+type asfGo struct {
+	AsfProfileConfig *asfProfileConfigGo `json:"asfProfileConfig,omitempty"`
+}
+
+func asfModelToAny(model *AsfModel) any {
+	if model == nil {
+		return nil
+	}
+
+	goModel := asfGo{}
+	if model.AsfProfileConfig != nil {
+		profile := &asfProfileConfigGo{SessionFields: make([]asfSessionFieldGo, 0, len(model.AsfProfileConfig.SessionFields))}
+		for _, sf := range model.AsfProfileConfig.SessionFields {
+			profile.SessionFields = append(profile.SessionFields, asfSessionFieldGo{Pos: sf.Pos.ValueInt32(), Type: sf.Type.ValueString()})
+		}
+		if !model.AsfProfileConfig.Timeout.IsNull() && !model.AsfProfileConfig.Timeout.IsUnknown() {
+			v := model.AsfProfileConfig.Timeout.ValueInt32()
+			profile.Timeout = &v
+		}
+		if !model.AsfProfileConfig.PacketCount.IsNull() && !model.AsfProfileConfig.PacketCount.IsUnknown() {
+			v := model.AsfProfileConfig.PacketCount.ValueInt32()
+			profile.PacketCount = &v
+		}
+		if !model.AsfProfileConfig.Bidi.IsNull() && !model.AsfProfileConfig.Bidi.IsUnknown() {
+			v := model.AsfProfileConfig.Bidi.ValueBool()
+			profile.Bidi = &v
+		}
+		if model.AsfProfileConfig.Buffering != nil {
+			buffering := &asfBufferingGo{}
+			if !model.AsfProfileConfig.Buffering.Enabled.IsNull() && !model.AsfProfileConfig.Buffering.Enabled.IsUnknown() {
+				v := model.AsfProfileConfig.Buffering.Enabled.ValueBool()
+				buffering.Enabled = &v
+			}
+			if !model.AsfProfileConfig.Buffering.Protocol.IsNull() && !model.AsfProfileConfig.Buffering.Protocol.IsUnknown() {
+				buffering.Protocol = model.AsfProfileConfig.Buffering.Protocol.ValueString()
+			}
+			if !model.AsfProfileConfig.Buffering.BufferCountBeforeMatch.IsNull() && !model.AsfProfileConfig.Buffering.BufferCountBeforeMatch.IsUnknown() {
+				v := model.AsfProfileConfig.Buffering.BufferCountBeforeMatch.ValueInt32()
+				buffering.BufferCountBeforeMatch = &v
+			}
+			profile.Buffering = buffering
+		}
+		goModel.AsfProfileConfig = profile
+	}
+
+	b, err := json.Marshal(goModel)
+	if err != nil {
+		return nil
+	}
+	var out any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func anyToAsfModel(raw any) *AsfModel {
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var goModel asfGo
+	if err := json.Unmarshal(b, &goModel); err != nil {
+		return nil
+	}
+
+	model := &AsfModel{}
+	if goModel.AsfProfileConfig != nil {
+		profile := &AsfProfileConfigModel{
+			SessionFields: make([]AsfSessionFieldModel, 0, len(goModel.AsfProfileConfig.SessionFields)),
+			Timeout:       types.Int32Null(),
+			PacketCount:   types.Int32Null(),
+			Bidi:          types.BoolNull(),
+		}
+		for _, sf := range goModel.AsfProfileConfig.SessionFields {
+			profile.SessionFields = append(profile.SessionFields, AsfSessionFieldModel{Pos: types.Int32Value(sf.Pos), Type: types.StringValue(sf.Type)})
+		}
+		if goModel.AsfProfileConfig.Timeout != nil {
+			profile.Timeout = types.Int32Value(*goModel.AsfProfileConfig.Timeout)
+		}
+		if goModel.AsfProfileConfig.PacketCount != nil {
+			profile.PacketCount = types.Int32Value(*goModel.AsfProfileConfig.PacketCount)
+		}
+		if goModel.AsfProfileConfig.Bidi != nil {
+			profile.Bidi = types.BoolValue(*goModel.AsfProfileConfig.Bidi)
+		}
+		if goModel.AsfProfileConfig.Buffering != nil {
+			buffering := &AsfBufferingModel{Enabled: types.BoolNull(), Protocol: types.StringNull(), BufferCountBeforeMatch: types.Int32Null()}
+			if goModel.AsfProfileConfig.Buffering.Enabled != nil {
+				buffering.Enabled = types.BoolValue(*goModel.AsfProfileConfig.Buffering.Enabled)
+			}
+			if goModel.AsfProfileConfig.Buffering.Protocol != "" {
+				buffering.Protocol = types.StringValue(goModel.AsfProfileConfig.Buffering.Protocol)
+			}
+			if goModel.AsfProfileConfig.Buffering.BufferCountBeforeMatch != nil {
+				buffering.BufferCountBeforeMatch = types.Int32Value(*goModel.AsfProfileConfig.Buffering.BufferCountBeforeMatch)
+			}
+			profile.Buffering = buffering
+		}
+		model.AsfProfileConfig = profile
+	}
+	return model
 }
 
 // Copy the Rule Groups object from GO model to the corresponding TF model
