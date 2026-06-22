@@ -57,3 +57,26 @@ resource "gigamon_app_ami" "minimal" {
 
   }
 }
+
+resource "gigamon_tunnel_out" "ami_udp_out" {
+  monitoring_session_id = local.monitoring_session_id
+  alias                 = "ami-udp-out-min"
+  description           = "UDP egress tunnel for AMI minimal example"
+  remote_ip             = "198.51.100.10"
+
+  udp = {
+    source_port      = 50000
+    destination_port = 50001
+  }
+}
+
+resource "gigamon_link" "ami_to_udp" {
+  monitoring_session_id = local.monitoring_session_id
+  source_id             = gigamon_app_ami.minimal.id
+  dest_id               = gigamon_tunnel_out.ami_udp_out.id
+
+  depends_on = [
+    gigamon_app_ami.minimal,
+    gigamon_tunnel_out.ami_udp_out,
+  ]
+}
