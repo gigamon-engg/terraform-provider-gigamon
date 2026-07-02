@@ -38,6 +38,7 @@ const (
 	TypeLoadBalancing   Type = "loadBalancing"
 	TypeAmi             Type = "ami"
 	TypeAmx             Type = "amx"
+	TypeAppViz          Type = "appviz"
 )
 
 // Tunnel Types
