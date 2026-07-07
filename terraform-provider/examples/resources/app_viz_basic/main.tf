@@ -18,7 +18,7 @@ provider "gigamon" {
 # Store your existing monitoring session ID locally
 # Format: monitoringSession::<platform>::<uuid>
 locals {
-  monitoring_session_id = "monitoringSession::vmware::0ddfdd2d-2a27-4abc-ae39-3432601bcd53"
+  monitoring_session_id = "monitoringSession::vmware::042047bf-9cc9-4b2d-a8b1-73e2d83107cd"
 }
 
 resource "gigamon_app_viz" "minimal" {
