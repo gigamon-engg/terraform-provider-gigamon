@@ -60,9 +60,22 @@ type AppVizMonitorModel struct {
 	Timeout types.Int32 `tfsdk:"timeout"`
 }
 
+type FMAppVizMonitor struct {
+	Timeout int32 `json:"timeout,omitempty"`
+}
+
+type FMAppVizExporterConfig struct {
+	Monitor *FMAppVizMonitor `json:"monitor,omitempty"`
+}
+
 type FMAppViz struct {
-	AppType   string                 `json:"app_type"`
-	AppConfig map[string]interface{} `json:"app_config"`
+	Id             string                  `json:"id,omitempty"`
+	Name           string                  `json:"name,omitempty"`
+	Alias          string                  `json:"alias,omitempty"`
+	Description    string                  `json:"description,omitempty"`
+	Action         bool                    `json:"action"`
+	ExporterConfig *FMAppVizExporterConfig `json:"exporterConfig,omitempty"`
+	MgmtInterface  string                  `json:"mgmtInterface,omitempty"`
 }
 
 func (r *AppViz) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -267,7 +280,7 @@ func (r *AppViz) Update(ctx context.Context, req resource.UpdateRequest, resp *r
 	}
 
 	payload := buildFMAppVizPayload(ctx, planData)
-	payload["id"] = rawID
+	payload.Id = rawID
 
 	updateReq := commonutils.UpdateReq{
 		Requests: []commonutils.UpdateObject{{
@@ -322,9 +335,9 @@ func (r *AppViz) Delete(ctx context.Context, req resource.DeleteRequest, resp *r
 		Requests: []commonutils.UpdateObject{{
 			EntityType: "application",
 			Operation:  "delete",
-			Application: map[string]interface{}{
-				"id":       rawID,
-				"app_type": "appviz",
+			Application: FMAppViz{
+				Id:   rawID,
+				Name: "appviz",
 			},
 		}},
 	}
@@ -373,36 +386,31 @@ func (r *AppViz) ImportState(ctx context.Context, req resource.ImportStateReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func buildFMAppVizPayload(ctx context.Context, model AppVizModel) map[string]interface{} {
-	appConfig := map[string]interface{}{
-		"alias":         model.Alias.ValueString(),
-		"description":   model.Description.ValueString(),
-		"action":        model.Action.ValueBool(),
-		"mgmtInterface": model.MgmtInterface.ValueString(),
+func buildFMAppVizPayload(ctx context.Context, model AppVizModel) FMAppViz {
+	fmData := FMAppViz{
+		Name:          "appviz",
+		Alias:         model.Alias.ValueString(),
+		Description:   model.Description.ValueString(),
+		Action:        model.Action.ValueBool(),
+		MgmtInterface: model.MgmtInterface.ValueString(),
 	}
 
 	if !model.ExporterConfig.IsNull() && !model.ExporterConfig.IsUnknown() {
 		var exporterCfg AppVizExporterConfigModel
 		_ = model.ExporterConfig.As(ctx, &exporterCfg, basetypes.ObjectAsOptions{})
 
-		exporterConfigMap := map[string]interface{}{}
 		if !exporterCfg.Monitor.IsNull() && !exporterCfg.Monitor.IsUnknown() {
 			var monitorCfg AppVizMonitorModel
 			_ = exporterCfg.Monitor.As(ctx, &monitorCfg, basetypes.ObjectAsOptions{})
-			exporterConfigMap["monitor"] = map[string]interface{}{
-				"timeout": monitorCfg.Timeout.ValueInt32(),
+			fmData.ExporterConfig = &FMAppVizExporterConfig{
+				Monitor: &FMAppVizMonitor{
+					Timeout: monitorCfg.Timeout.ValueInt32(),
+				},
 			}
 		}
-
-		if len(exporterConfigMap) > 0 {
-			appConfig["exporterConfig"] = exporterConfigMap
-		}
 	}
 
-	return map[string]interface{}{
-		"app_type":   "appviz",
-		"app_config": appConfig,
-	}
+	return fmData
 }
 
 func mapFMAppVizToState(ctx context.Context, fmData FMAppViz, sessionID string, typedID string) AppVizModel {
@@ -415,52 +423,40 @@ func mapFMAppVizToState(ctx context.Context, fmData FMAppViz, sessionID string, 
 		MgmtInterface:       types.StringValue("internal"),
 	}
 
-	if fmData.AppConfig != nil {
-		if alias, ok := fmData.AppConfig["alias"].(string); ok {
-			model.Alias = types.StringValue(alias)
-		}
+	if fmData.Alias != "" {
+		model.Alias = types.StringValue(fmData.Alias)
+	}
 
-		if description, ok := fmData.AppConfig["description"].(string); ok {
-			model.Description = types.StringValue(description)
-		}
+	model.Description = types.StringValue(fmData.Description)
+	model.Action = types.BoolValue(fmData.Action)
 
-		if action, ok := fmData.AppConfig["action"].(bool); ok {
-			model.Action = types.BoolValue(action)
-		}
+	if fmData.MgmtInterface != "" {
+		model.MgmtInterface = types.StringValue(fmData.MgmtInterface)
+	}
 
-		if mgmtInterface, ok := fmData.AppConfig["mgmtInterface"].(string); ok {
-			model.MgmtInterface = types.StringValue(mgmtInterface)
-		}
+	if fmData.ExporterConfig != nil && fmData.ExporterConfig.Monitor != nil {
+		exporterModel := AppVizExporterConfigModel{}
+		monitorModel := AppVizMonitorModel{Timeout: types.Int32Value(fmData.ExporterConfig.Monitor.Timeout)}
 
-		if exporterCfg, ok := fmData.AppConfig["exporterConfig"].(map[string]interface{}); ok {
-			exporterModel := AppVizExporterConfigModel{}
-			if monitorCfg, ok := exporterCfg["monitor"].(map[string]interface{}); ok {
-				monitorModel := AppVizMonitorModel{Timeout: types.Int32Value(300)}
-				if timeout, ok := monitorCfg["timeout"].(float64); ok {
-					monitorModel.Timeout = types.Int32Value(int32(timeout))
-				}
+		monitorObj, _ := types.ObjectValueFrom(ctx,
+			map[string]attr.Type{
+				"timeout": types.Int32Type,
+			},
+			monitorModel,
+		)
+		exporterModel.Monitor = monitorObj
 
-				monitorObj, _ := types.ObjectValueFrom(ctx,
-					map[string]attr.Type{
+		exporterObj, _ := types.ObjectValueFrom(ctx,
+			map[string]attr.Type{
+				"monitor": types.ObjectType{
+					AttrTypes: map[string]attr.Type{
 						"timeout": types.Int32Type,
 					},
-					monitorModel,
-				)
-				exporterModel.Monitor = monitorObj
-			}
-
-			exporterObj, _ := types.ObjectValueFrom(ctx,
-				map[string]attr.Type{
-					"monitor": types.ObjectType{
-						AttrTypes: map[string]attr.Type{
-							"timeout": types.Int32Type,
-						},
-					},
 				},
-				exporterModel,
-			)
-			model.ExporterConfig = exporterObj
-		}
+			},
+			exporterModel,
+		)
+		model.ExporterConfig = exporterObj
 	}
 
 	return model
