@@ -42,6 +42,7 @@ const (
 	Type5GCloud         Type = "5GCloud"
 	Type5GEvp           Type = "5GEvp"
 	Type5GSBI           Type = "5GSBI"
+	TypePCapNG          Type = "PCapNG"
 	TypeGVHTTP2         Type = "GVHTTP2"
 )
 
