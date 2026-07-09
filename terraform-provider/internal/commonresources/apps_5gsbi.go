@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -46,15 +47,64 @@ type App5GSBI struct {
 type App5GSBIModel struct {
 	Id                  types.String `tfsdk:"id"`
 	MonitoringSessionId types.String `tfsdk:"monitoring_session_id"`
-	SBIMode             types.String `tfsdk:"sbi_mode"`
-	ProtocolHandlers    types.List   `tfsdk:"protocol_handlers"`
-	Authentication      types.Object `tfsdk:"authentication"`
+
+	// Legacy abstraction fields (kept for backward compatibility)
+	SBIMode          types.String `tfsdk:"sbi_mode"`
+	ProtocolHandlers types.List   `tfsdk:"protocol_handlers"`
+	Authentication   types.Object `tfsdk:"authentication"`
+
+	// FM API direct fields
+	Alias                            types.String `tfsdk:"alias"`
+	Name                             types.String `tfsdk:"name"`
+	Type                             types.String `tfsdk:"type"`
+	IpMappingAlias                   types.String `tfsdk:"ipMappingAlias"`
+	Http2SynthesizeToolMtuPacketSize types.Int64  `tfsdk:"http2SynthesizeToolMtuPacketSize"`
+	Http2SynthesizeIndexedHeaders    types.Bool   `tfsdk:"http2SynthesizeIndexedHeaders"`
+	Http2SynthesizeCompressedHeaders types.Bool   `tfsdk:"http2SynthesizeCompressedHeaders"`
+	TransactionLog                   types.Bool   `tfsdk:"transactionLog"`
+	TransactionLogFileInterval       types.Int64  `tfsdk:"transactionLogFileInterval"`
+	LogFolderSize                    types.Int64  `tfsdk:"logFolderSize"`
+	StatsLog                         types.Bool   `tfsdk:"statsLog"`
+	LogFolderLoc                     types.String `tfsdk:"logFolderLoc"`
+	EricssonVTapConfig               types.Object `tfsdk:"ericssonVTapConfig"`
 }
 
+// AuthenticationModel represents the authentication nested block
 type AuthenticationModel struct {
 	Enabled  types.Bool   `tfsdk:"enabled"`
 	CertPath types.String `tfsdk:"cert_path"`
 	KeyPath  types.String `tfsdk:"key_path"`
+}
+
+// EricssonVTapConfigModel represents the ericssonVTapConfig nested block
+type EricssonVTapConfigModel struct {
+	Mode                 types.String `tfsdk:"mode"`
+	EevtapVersion        types.String `tfsdk:"eevtapVersion"`
+	NumTCPFlows          types.Int64  `tfsdk:"numTCPFlows"`
+	TcpFlowTimeout       types.Int64  `tfsdk:"tcpFlowTimeout"`
+	NumStreamsPerFlow    types.Int64  `tfsdk:"numStreamsPerFlow"`
+	Http2RequestTimeout  types.Int64  `tfsdk:"http2RequestTimeout"`
+	Http2ResponseTimeout types.Int64  `tfsdk:"http2ResponseTimeout"`
+	DestinationIP        types.String `tfsdk:"destinationIP"`
+	FqdnMappingAlias     types.String `tfsdk:"fqdnMappingAlias"`
+}
+
+var ericssonVTapConfigAttrTypes = map[string]attr.Type{
+	"mode":                 types.StringType,
+	"eevtapVersion":        types.StringType,
+	"numTCPFlows":          types.Int64Type,
+	"tcpFlowTimeout":       types.Int64Type,
+	"numStreamsPerFlow":    types.Int64Type,
+	"http2RequestTimeout":  types.Int64Type,
+	"http2ResponseTimeout": types.Int64Type,
+	"destinationIP":        types.StringType,
+	"fqdnMappingAlias":     types.StringType,
+}
+
+var authenticationAttrTypes = map[string]attr.Type{
+	"enabled":   types.BoolType,
+	"cert_path": types.StringType,
+	"key_path":  types.StringType,
 }
 
 // FM5GSBI represents the wire format for 5G-SBI application in the FM API
@@ -72,7 +122,6 @@ func (r *App5GSBI) Metadata(ctx context.Context, req resource.MetadataRequest, r
 func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Manages a 5G-SBI (Service-based Interface) application instance on a monitoring session.",
-
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Description: "The unique identifier for the 5G-SBI app resource",
@@ -81,7 +130,6 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-
 			"monitoring_session_id": schema.StringAttribute{
 				Description: "The ID of the monitoring session to associate this app with",
 				Required:    true,
@@ -93,14 +141,16 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				},
 			},
 
+			// Legacy abstraction fields
 			"sbi_mode": schema.StringAttribute{
 				Description: "SBI mode: nrf, udm, or amf",
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString("nrf"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("nrf", "udm", "amf"),
 				},
 			},
-
 			"protocol_handlers": schema.ListAttribute{
 				Description: "Protocol handlers: http, https, grpc",
 				ElementType: types.StringType,
@@ -111,7 +161,6 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 					),
 				},
 			},
-
 			"authentication": schema.SingleNestedAttribute{
 				Description: "Authentication configuration",
 				Optional:    true,
@@ -130,6 +179,71 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 						Description: "Private key file path",
 						Optional:    true,
 					},
+				},
+			},
+
+			// FM API direct fields
+			"alias": schema.StringAttribute{
+				Description: "Alias for the 5G-SBI application template",
+				Optional:    true,
+			},
+			"name": schema.StringAttribute{
+				Description: "Display name for the 5G-SBI application",
+				Optional:    true,
+			},
+			"type": schema.StringAttribute{
+				Description: "Application type variant (e.g. ericssonVTap)",
+				Optional:    true,
+			},
+			"ipMappingAlias": schema.StringAttribute{
+				Description: "IP mapping alias for NF instance resolution",
+				Optional:    true,
+			},
+			"http2SynthesizeToolMtuPacketSize": schema.Int64Attribute{
+				Description: "MTU packet size for HTTP/2 synthesize tool (0 = default)",
+				Optional:    true,
+			},
+			"http2SynthesizeIndexedHeaders": schema.BoolAttribute{
+				Description: "Enable indexed headers for HTTP/2 synthesize",
+				Optional:    true,
+			},
+			"http2SynthesizeCompressedHeaders": schema.BoolAttribute{
+				Description: "Enable compressed headers for HTTP/2 synthesize",
+				Optional:    true,
+			},
+			"transactionLog": schema.BoolAttribute{
+				Description: "Enable transaction logging",
+				Optional:    true,
+			},
+			"transactionLogFileInterval": schema.Int64Attribute{
+				Description: "Transaction log file rotation interval in seconds",
+				Optional:    true,
+			},
+			"logFolderSize": schema.Int64Attribute{
+				Description: "Maximum log folder size in MB (0 = unlimited)",
+				Optional:    true,
+			},
+			"statsLog": schema.BoolAttribute{
+				Description: "Enable statistics logging",
+				Optional:    true,
+			},
+			"logFolderLoc": schema.StringAttribute{
+				Description: "Log folder location path",
+				Optional:    true,
+			},
+			"ericssonVTapConfig": schema.SingleNestedAttribute{
+				Description: "Ericsson vTap specific configuration",
+				Optional:    true,
+				Attributes: map[string]schema.Attribute{
+					"mode": schema.StringAttribute{Description: "vTap mode (e.g. L7json)", Optional: true},
+					"eevtapVersion": schema.StringAttribute{Description: "Ericsson vTap version", Optional: true},
+					"numTCPFlows": schema.Int64Attribute{Description: "Number of TCP flows", Optional: true},
+					"tcpFlowTimeout": schema.Int64Attribute{Description: "TCP flow timeout in seconds", Optional: true},
+					"numStreamsPerFlow": schema.Int64Attribute{Description: "Number of streams per flow", Optional: true},
+					"http2RequestTimeout": schema.Int64Attribute{Description: "HTTP/2 request timeout in seconds", Optional: true},
+					"http2ResponseTimeout": schema.Int64Attribute{Description: "HTTP/2 response timeout in seconds", Optional: true},
+					"destinationIP": schema.StringAttribute{Description: "Destination IP address or label (e.g. SCP)", Optional: true},
+					"fqdnMappingAlias": schema.StringAttribute{Description: "FQDN mapping alias", Optional: true},
 				},
 			},
 		},
@@ -164,19 +278,14 @@ func (r *App5GSBI) Create(ctx context.Context, req resource.CreateRequest, resp 
 	}
 
 	sessionID := data.MonitoringSessionId.ValueString()
-
-	// Build FM API payload
 	payload := buildFM5GSBIPayload(ctx, data)
 
-	// Create the application
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{
-			{
-				EntityType:  "application",
-				Operation:   "create",
-				Application: payload,
-			},
-		},
+		Requests: []commonutils.UpdateObject{{
+			EntityType:  "application",
+			Operation:   "create",
+			Application: payload,
+		}},
 	}
 
 	id, err := commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
@@ -189,14 +298,12 @@ func (r *App5GSBI) Create(ctx context.Context, req resource.CreateRequest, resp 
 		return
 	}
 
-	// Create typed ID
 	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.Type5GSBI, id)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
 		return
 	}
 
-	// Fetch the created resource to get full state
 	fmData := FM5GSBI{}
 	err = GetMSAppData(ctx, sessionID, id, "5G-SBI", "", &fmData, r.fmClient)
 	if err != nil {
@@ -206,7 +313,6 @@ func (r *App5GSBI) Create(ctx context.Context, req resource.CreateRequest, resp 
 	}
 
 	data.Id = types.StringValue(typedID)
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -231,7 +337,6 @@ func (r *App5GSBI) Read(ctx context.Context, req resource.ReadRequest, resp *res
 		return
 	}
 
-	// Fetch the resource
 	fmData := FM5GSBI{}
 	err = GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
 	if err != nil {
@@ -247,7 +352,6 @@ func (r *App5GSBI) Read(ctx context.Context, req resource.ReadRequest, resp *res
 	}
 
 	data = mapFM5GSBIToState(ctx, fmData, sessionID, typedID)
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -272,19 +376,15 @@ func (r *App5GSBI) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		return
 	}
 
-	// Build FM API payload with id
 	payload := buildFM5GSBIPayload(ctx, planData)
 	payload["id"] = rawID
 
-	// Update the application
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{
-			{
-				EntityType:  "application",
-				Operation:   "update",
-				Application: payload,
-			},
-		},
+		Requests: []commonutils.UpdateObject{{
+			EntityType:  "application",
+			Operation:   "update",
+			Application: payload,
+		}},
 	}
 
 	_, err = commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
@@ -297,7 +397,6 @@ func (r *App5GSBI) Update(ctx context.Context, req resource.UpdateRequest, resp 
 		return
 	}
 
-	// Fetch the updated resource to get full state
 	fmData := FM5GSBI{}
 	err = GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
 	if err != nil {
@@ -330,18 +429,15 @@ func (r *App5GSBI) Delete(ctx context.Context, req resource.DeleteRequest, resp 
 		return
 	}
 
-	// Delete the application
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{
-			{
-				EntityType: "application",
-				Operation:  "delete",
-				Application: map[string]interface{}{
-					"id":       rawID,
-					"app_type": "5G-SBI",
-				},
+		Requests: []commonutils.UpdateObject{{
+			EntityType: "application",
+			Operation:  "delete",
+			Application: map[string]interface{}{
+				"id":       rawID,
+				"app_type": "5G-SBI",
 			},
-		},
+		}},
 	}
 
 	_, err = commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
@@ -357,7 +453,6 @@ func (r *App5GSBI) Delete(ctx context.Context, req resource.DeleteRequest, resp 
 
 // ImportState imports a 5G-SBI application by session_id::app_id
 func (r *App5GSBI) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Expected format: session_id::app_id
 	parts := strings.Split(req.ID, "::")
 	if len(parts) != 2 {
 		resp.Diagnostics.AddError(
@@ -370,7 +465,6 @@ func (r *App5GSBI) ImportState(ctx context.Context, req resource.ImportStateRequ
 	sessionID := parts[0]
 	rawID := parts[1]
 
-	// Fetch the resource
 	fmData := FM5GSBI{}
 	err := GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
 	if err != nil {
@@ -381,39 +475,83 @@ func (r *App5GSBI) ImportState(ctx context.Context, req resource.ImportStateRequ
 		return
 	}
 
-	// Create typed ID
 	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.Type5GSBI, rawID)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
 		return
 	}
 
-	// Map to state
 	data := mapFM5GSBIToState(ctx, fmData, sessionID, typedID)
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func setStringFromConfig(cfg map[string]interface{}, key string, v types.String) {
+	if !v.IsNull() && !v.IsUnknown() {
+		cfg[key] = v.ValueString()
+	}
+}
+
+func setBoolFromConfig(cfg map[string]interface{}, key string, v types.Bool) {
+	if !v.IsNull() && !v.IsUnknown() {
+		cfg[key] = v.ValueBool()
+	}
+}
+
+func setInt64FromConfig(cfg map[string]interface{}, key string, v types.Int64) {
+	if !v.IsNull() && !v.IsUnknown() {
+		cfg[key] = v.ValueInt64()
+	}
 }
 
 // buildFM5GSBIPayload converts the Terraform model to FM API payload format
 func buildFM5GSBIPayload(ctx context.Context, model App5GSBIModel) map[string]interface{} {
-	appConfig := map[string]interface{}{
-		"sbi_mode": model.SBIMode.ValueString(),
-	}
+	appConfig := map[string]interface{}{}
 
+	// Legacy abstraction fields
+	setStringFromConfig(appConfig, "sbi_mode", model.SBIMode)
 	if !model.ProtocolHandlers.IsNull() && !model.ProtocolHandlers.IsUnknown() {
 		var handlers []string
-		model.ProtocolHandlers.ElementsAs(ctx, &handlers, false)
+		_ = model.ProtocolHandlers.ElementsAs(ctx, &handlers, false)
 		appConfig["protocol_handlers"] = handlers
 	}
-
 	if !model.Authentication.IsNull() && !model.Authentication.IsUnknown() {
 		var authModel AuthenticationModel
 		_ = model.Authentication.As(ctx, &authModel, basetypes.ObjectAsOptions{})
-		appConfig["authentication"] = map[string]interface{}{
-			"enabled":   authModel.Enabled.ValueBool(),
-			"cert_path": authModel.CertPath.ValueString(),
-			"key_path":  authModel.KeyPath.ValueString(),
-		}
+		authCfg := map[string]interface{}{}
+		setBoolFromConfig(authCfg, "enabled", authModel.Enabled)
+		setStringFromConfig(authCfg, "cert_path", authModel.CertPath)
+		setStringFromConfig(authCfg, "key_path", authModel.KeyPath)
+		appConfig["authentication"] = authCfg
+	}
+
+	// FM direct fields
+	setStringFromConfig(appConfig, "alias", model.Alias)
+	setStringFromConfig(appConfig, "name", model.Name)
+	setStringFromConfig(appConfig, "type", model.Type)
+	setStringFromConfig(appConfig, "ipMappingAlias", model.IpMappingAlias)
+	setInt64FromConfig(appConfig, "http2SynthesizeToolMtuPacketSize", model.Http2SynthesizeToolMtuPacketSize)
+	setBoolFromConfig(appConfig, "http2SynthesizeIndexedHeaders", model.Http2SynthesizeIndexedHeaders)
+	setBoolFromConfig(appConfig, "http2SynthesizeCompressedHeaders", model.Http2SynthesizeCompressedHeaders)
+	setBoolFromConfig(appConfig, "transactionLog", model.TransactionLog)
+	setInt64FromConfig(appConfig, "transactionLogFileInterval", model.TransactionLogFileInterval)
+	setInt64FromConfig(appConfig, "logFolderSize", model.LogFolderSize)
+	setBoolFromConfig(appConfig, "statsLog", model.StatsLog)
+	setStringFromConfig(appConfig, "logFolderLoc", model.LogFolderLoc)
+
+	if !model.EricssonVTapConfig.IsNull() && !model.EricssonVTapConfig.IsUnknown() {
+		var vtap EricssonVTapConfigModel
+		_ = model.EricssonVTapConfig.As(ctx, &vtap, basetypes.ObjectAsOptions{})
+		cfg := map[string]interface{}{}
+		setStringFromConfig(cfg, "mode", vtap.Mode)
+		setStringFromConfig(cfg, "eevtapVersion", vtap.EevtapVersion)
+		setInt64FromConfig(cfg, "numTCPFlows", vtap.NumTCPFlows)
+		setInt64FromConfig(cfg, "tcpFlowTimeout", vtap.TcpFlowTimeout)
+		setInt64FromConfig(cfg, "numStreamsPerFlow", vtap.NumStreamsPerFlow)
+		setInt64FromConfig(cfg, "http2RequestTimeout", vtap.Http2RequestTimeout)
+		setInt64FromConfig(cfg, "http2ResponseTimeout", vtap.Http2ResponseTimeout)
+		setStringFromConfig(cfg, "destinationIP", vtap.DestinationIP)
+		setStringFromConfig(cfg, "fqdnMappingAlias", vtap.FqdnMappingAlias)
+		appConfig["ericssonVTapConfig"] = cfg
 	}
 
 	return map[string]interface{}{
@@ -422,51 +560,114 @@ func buildFM5GSBIPayload(ctx context.Context, model App5GSBIModel) map[string]in
 	}
 }
 
+func readString(cfg map[string]interface{}, key string) types.String {
+	if v, ok := cfg[key].(string); ok {
+		return types.StringValue(v)
+	}
+	return types.StringNull()
+}
+
+func readBool(cfg map[string]interface{}, key string) types.Bool {
+	if v, ok := cfg[key].(bool); ok {
+		return types.BoolValue(v)
+	}
+	return types.BoolNull()
+}
+
+func readInt64(cfg map[string]interface{}, key string) types.Int64 {
+	if v, ok := cfg[key].(float64); ok {
+		return types.Int64Value(int64(v))
+	}
+	if v, ok := cfg[key].(int64); ok {
+		return types.Int64Value(v)
+	}
+	if v, ok := cfg[key].(int); ok {
+		return types.Int64Value(int64(v))
+	}
+	return types.Int64Null()
+}
+
 // mapFM5GSBIToState converts FM API response to Terraform model
 func mapFM5GSBIToState(ctx context.Context, fmData FM5GSBI, sessionID string, typedID string) App5GSBIModel {
 	model := App5GSBIModel{
 		Id:                  types.StringValue(typedID),
 		MonitoringSessionId: types.StringValue(sessionID),
 		SBIMode:             types.StringValue("nrf"),
+		ProtocolHandlers:    types.ListNull(types.StringType),
+		Authentication:      types.ObjectNull(authenticationAttrTypes),
+		Alias:                            types.StringNull(),
+		Name:                             types.StringNull(),
+		Type:                             types.StringNull(),
+		IpMappingAlias:                   types.StringNull(),
+		Http2SynthesizeToolMtuPacketSize: types.Int64Null(),
+		Http2SynthesizeIndexedHeaders:    types.BoolNull(),
+		Http2SynthesizeCompressedHeaders: types.BoolNull(),
+		TransactionLog:                   types.BoolNull(),
+		TransactionLogFileInterval:       types.Int64Null(),
+		LogFolderSize:                    types.Int64Null(),
+		StatsLog:                         types.BoolNull(),
+		LogFolderLoc:                     types.StringNull(),
+		EricssonVTapConfig:               types.ObjectNull(ericssonVTapConfigAttrTypes),
 	}
 
-	if fmData.AppConfig != nil {
-		if sbiMode, ok := fmData.AppConfig["sbi_mode"].(string); ok {
-			model.SBIMode = types.StringValue(sbiMode)
-		}
+	if fmData.AppConfig == nil {
+		return model
+	}
 
-		if handlers, ok := fmData.AppConfig["protocol_handlers"].([]interface{}); ok {
-			var handlerStrs []string
-			for _, h := range handlers {
-				if hStr, ok := h.(string); ok {
-					handlerStrs = append(handlerStrs, hStr)
-				}
-			}
-			handlersObj, _ := types.ListValueFrom(ctx, types.StringType, handlerStrs)
-			model.ProtocolHandlers = handlersObj
-		}
+	cfg := fmData.AppConfig
 
-		if authCfg, ok := fmData.AppConfig["authentication"].(map[string]interface{}); ok {
-			authModel := AuthenticationModel{
-				Enabled:  types.BoolValue(false),
-				CertPath: types.StringValue(""),
-				KeyPath:  types.StringValue(""),
+	if sbiMode, ok := cfg["sbi_mode"].(string); ok {
+		model.SBIMode = types.StringValue(sbiMode)
+	}
+	if handlers, ok := cfg["protocol_handlers"].([]interface{}); ok {
+		var out []string
+		for _, h := range handlers {
+			if hs, ok := h.(string); ok {
+				out = append(out, hs)
 			}
-			if enabled, ok := authCfg["enabled"].(bool); ok {
-				authModel.Enabled = types.BoolValue(enabled)
-			}
-			if certPath, ok := authCfg["cert_path"].(string); ok {
-				authModel.CertPath = types.StringValue(certPath)
-			}
-			if keyPath, ok := authCfg["key_path"].(string); ok {
-				authModel.KeyPath = types.StringValue(keyPath)
-			}
-			authObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"enabled":   types.BoolType,
-				"cert_path": types.StringType,
-				"key_path":  types.StringType,
-			}, authModel)
-			model.Authentication = authObj
+		}
+		if list, diags := types.ListValueFrom(ctx, types.StringType, out); !diags.HasError() {
+			model.ProtocolHandlers = list
+		}
+	}
+	if authCfg, ok := cfg["authentication"].(map[string]interface{}); ok {
+		authModel := AuthenticationModel{
+			Enabled:  readBool(authCfg, "enabled"),
+			CertPath: readString(authCfg, "cert_path"),
+			KeyPath:  readString(authCfg, "key_path"),
+		}
+		if obj, diags := types.ObjectValueFrom(ctx, authenticationAttrTypes, authModel); !diags.HasError() {
+			model.Authentication = obj
+		}
+	}
+
+	model.Alias = readString(cfg, "alias")
+	model.Name = readString(cfg, "name")
+	model.Type = readString(cfg, "type")
+	model.IpMappingAlias = readString(cfg, "ipMappingAlias")
+	model.Http2SynthesizeToolMtuPacketSize = readInt64(cfg, "http2SynthesizeToolMtuPacketSize")
+	model.Http2SynthesizeIndexedHeaders = readBool(cfg, "http2SynthesizeIndexedHeaders")
+	model.Http2SynthesizeCompressedHeaders = readBool(cfg, "http2SynthesizeCompressedHeaders")
+	model.TransactionLog = readBool(cfg, "transactionLog")
+	model.TransactionLogFileInterval = readInt64(cfg, "transactionLogFileInterval")
+	model.LogFolderSize = readInt64(cfg, "logFolderSize")
+	model.StatsLog = readBool(cfg, "statsLog")
+	model.LogFolderLoc = readString(cfg, "logFolderLoc")
+
+	if vtapCfg, ok := cfg["ericssonVTapConfig"].(map[string]interface{}); ok {
+		vtap := EricssonVTapConfigModel{
+			Mode:                 readString(vtapCfg, "mode"),
+			EevtapVersion:        readString(vtapCfg, "eevtapVersion"),
+			NumTCPFlows:          readInt64(vtapCfg, "numTCPFlows"),
+			TcpFlowTimeout:       readInt64(vtapCfg, "tcpFlowTimeout"),
+			NumStreamsPerFlow:    readInt64(vtapCfg, "numStreamsPerFlow"),
+			Http2RequestTimeout:  readInt64(vtapCfg, "http2RequestTimeout"),
+			Http2ResponseTimeout: readInt64(vtapCfg, "http2ResponseTimeout"),
+			DestinationIP:        readString(vtapCfg, "destinationIP"),
+			FqdnMappingAlias:     readString(vtapCfg, "fqdnMappingAlias"),
+		}
+		if obj, diags := types.ObjectValueFrom(ctx, ericssonVTapConfigAttrTypes, vtap); !diags.HasError() {
+			model.EricssonVTapConfig = obj
 		}
 	}
 

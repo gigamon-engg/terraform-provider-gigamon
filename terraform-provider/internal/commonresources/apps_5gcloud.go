@@ -549,6 +549,19 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 		MonitoringSessionId: types.StringValue(sessionID),
 		Enabled:             types.BoolValue(true),
 		Profile:             types.StringValue("default"),
+		FilterConfig: types.ObjectNull(map[string]attr.Type{
+			"protocol_filter": types.StringType,
+			"port_range": types.ObjectType{
+				AttrTypes: map[string]attr.Type{
+					"min": types.Int32Type,
+					"max": types.Int32Type,
+				},
+			},
+		}),
+		ExportConfig: types.ObjectNull(map[string]attr.Type{
+			"format":   types.StringType,
+			"interval": types.Int32Type,
+		}),
 	}
 
 	// Parse FM response data from AppConfig
@@ -567,6 +580,10 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 		if filterCfg, ok := fmData.AppConfig["filter_config"].(map[string]interface{}); ok {
 			filterModel := FilterConfigModel{
 				ProtocolFilter: types.StringValue("all"),
+				PortRange: types.ObjectNull(map[string]attr.Type{
+					"min": types.Int32Type,
+					"max": types.Int32Type,
+				}),
 			}
 
 			if protocolFilter, ok := filterCfg["protocol_filter"].(string); ok {
