@@ -298,13 +298,13 @@ func (l *Link) validateSourceAep(
 
 	isMap := parts.Module == commonutils.ModuleMap
 	isLbApp := parts.Module == commonutils.ModuleApp && parts.Type == commonutils.TypeLoadBalancing
-
+	isAMI := parts.Module == commonutils.ModuleApp && parts.Type == commonutils.TypeAmi
 	// If user didn't set it:
 	if srcAep.IsNull() || srcAep.IsUnknown() {
 		// For map or LB source, this is invalid → enforce requirement.
-		if isMap || isLbApp {
+		if isMap || isLbApp || isAMI {
 			return fmt.Errorf(
-				"source_aep_id is required when source_id refers to a traffic map or load balancing app; " +
+				"source_aep_id is required when source_id refers to a traffic map, load balancing app, or AMI app; " +
 					"please set source_aep_id to the appropriate AEP ID",
 			)
 		}
@@ -313,9 +313,9 @@ func (l *Link) validateSourceAep(
 	}
 
 	// If user did set it, only allow for map or load-balancing app.
-	if !(isMap || isLbApp) {
+	if !(isMap || isLbApp || isAMI) {
 		return fmt.Errorf(
-			"source_aep_id is only valid when the link source is a map or a load balancing application; got module=%q type=%q",
+			"source_aep_id is only valid when the link source is a map, a load balancing application, or an AMI application; got module=%q type=%q",
 			parts.Module, parts.Type,
 		)
 	}

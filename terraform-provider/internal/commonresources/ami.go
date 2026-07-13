@@ -345,6 +345,7 @@ func amiIPMatchSchema() schema.SingleNestedAttribute {
 		Attributes: map[string]schema.Attribute{
 			"destination": amiPrefixSchema(),
 			"protocol":    schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
+			"next_header": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 			"source":      amiPrefixSchema(),
 		},
 	}
@@ -355,6 +356,7 @@ func amiIPv6MatchSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"destination": amiPrefixSchema(),
+			"protocol":    schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 			"next_header": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 			"source":      amiPrefixSchema(),
 		},

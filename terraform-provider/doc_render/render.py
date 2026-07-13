@@ -85,8 +85,13 @@ def get_supported_objects(base_dir):
         if os.path.isdir(res_path):
             res_list = sorted(os.listdir(res_path))
             for res in res_list:
-                #Strip gigamon_ and .md
-                remainder = res[len("gigamon_"):-3]
+                # Keep only markdown files, then strip optional gigamon_ prefix.
+                if not res.endswith(".md"):
+                    continue
+
+                remainder = res[:-3]
+                if remainder.startswith("gigamon_"):
+                    remainder = remainder[len("gigamon_"):]
 
                 platform_token = None
                 for token in PLATFORM_DISPLAY_NAME:
@@ -95,9 +100,9 @@ def get_supported_objects(base_dir):
                         break
 
                 if platform_token is None:
-                    continue
-
-                platform = PLATFORM_DISPLAY_NAME[platform_token]
+                    platform = PLATFORM_DISPLAY_NAME["common"]
+                else:
+                    platform = PLATFORM_DISPLAY_NAME[platform_token]
 
                 platforms.add(platform)
                 if platform not in obj_dict:
