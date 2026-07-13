@@ -57,16 +57,16 @@ type App5GSBIModel struct {
 	Alias                            types.String `tfsdk:"alias"`
 	Name                             types.String `tfsdk:"name"`
 	Type                             types.String `tfsdk:"type"`
-	IpMappingAlias                   types.String `tfsdk:"ipMappingAlias"`
-	Http2SynthesizeToolMtuPacketSize types.Int64  `tfsdk:"http2SynthesizeToolMtuPacketSize"`
-	Http2SynthesizeIndexedHeaders    types.Bool   `tfsdk:"http2SynthesizeIndexedHeaders"`
-	Http2SynthesizeCompressedHeaders types.Bool   `tfsdk:"http2SynthesizeCompressedHeaders"`
-	TransactionLog                   types.Bool   `tfsdk:"transactionLog"`
-	TransactionLogFileInterval       types.Int64  `tfsdk:"transactionLogFileInterval"`
-	LogFolderSize                    types.Int64  `tfsdk:"logFolderSize"`
-	StatsLog                         types.Bool   `tfsdk:"statsLog"`
-	LogFolderLoc                     types.String `tfsdk:"logFolderLoc"`
-	EricssonVTapConfig               types.Object `tfsdk:"ericssonVTapConfig"`
+	IpMappingAlias                   types.String `tfsdk:"ip_mapping_alias"`
+	Http2SynthesizeToolMtuPacketSize types.Int64  `tfsdk:"http2_synthesize_tool_mtu_packet_size"`
+	Http2SynthesizeIndexedHeaders    types.Bool   `tfsdk:"http2_synthesize_indexed_headers"`
+	Http2SynthesizeCompressedHeaders types.Bool   `tfsdk:"http2_synthesize_compressed_headers"`
+	TransactionLog                   types.Bool   `tfsdk:"transaction_log"`
+	TransactionLogFileInterval       types.Int64  `tfsdk:"transaction_log_file_interval"`
+	LogFolderSize                    types.Int64  `tfsdk:"log_folder_size"`
+	StatsLog                         types.Bool   `tfsdk:"stats_log"`
+	LogFolderLoc                     types.String `tfsdk:"log_folder_loc"`
+	EricssonVTapConfig               types.Object `tfsdk:"ericsson_vtap_config"`
 }
 
 // AuthenticationModel represents the authentication nested block
@@ -76,29 +76,29 @@ type AuthenticationModel struct {
 	KeyPath  types.String `tfsdk:"key_path"`
 }
 
-// EricssonVTapConfigModel represents the ericssonVTapConfig nested block
+// EricssonVTapConfigModel represents the ericsson_vtap_config nested block
 type EricssonVTapConfigModel struct {
 	Mode                 types.String `tfsdk:"mode"`
-	EevtapVersion        types.String `tfsdk:"eevtapVersion"`
-	NumTCPFlows          types.Int64  `tfsdk:"numTCPFlows"`
-	TcpFlowTimeout       types.Int64  `tfsdk:"tcpFlowTimeout"`
-	NumStreamsPerFlow    types.Int64  `tfsdk:"numStreamsPerFlow"`
-	Http2RequestTimeout  types.Int64  `tfsdk:"http2RequestTimeout"`
-	Http2ResponseTimeout types.Int64  `tfsdk:"http2ResponseTimeout"`
-	DestinationIP        types.String `tfsdk:"destinationIP"`
-	FqdnMappingAlias     types.String `tfsdk:"fqdnMappingAlias"`
+	EevtapVersion        types.String `tfsdk:"eevtap_version"`
+	NumTCPFlows          types.Int64  `tfsdk:"num_tcp_flows"`
+	TcpFlowTimeout       types.Int64  `tfsdk:"tcp_flow_timeout"`
+	NumStreamsPerFlow    types.Int64  `tfsdk:"num_streams_per_flow"`
+	Http2RequestTimeout  types.Int64  `tfsdk:"http2_request_timeout"`
+	Http2ResponseTimeout types.Int64  `tfsdk:"http2_response_timeout"`
+	DestinationIP        types.String `tfsdk:"destination_ip"`
+	FqdnMappingAlias     types.String `tfsdk:"fqdn_mapping_alias"`
 }
 
 var ericssonVTapConfigAttrTypes = map[string]attr.Type{
-	"mode":                 types.StringType,
-	"eevtapVersion":        types.StringType,
-	"numTCPFlows":          types.Int64Type,
-	"tcpFlowTimeout":       types.Int64Type,
-	"numStreamsPerFlow":    types.Int64Type,
-	"http2RequestTimeout":  types.Int64Type,
-	"http2ResponseTimeout": types.Int64Type,
-	"destinationIP":        types.StringType,
-	"fqdnMappingAlias":     types.StringType,
+	"mode":                        types.StringType,
+	"eevtap_version":              types.StringType,
+	"num_tcp_flows":               types.Int64Type,
+	"tcp_flow_timeout":            types.Int64Type,
+	"num_streams_per_flow":        types.Int64Type,
+	"http2_request_timeout":       types.Int64Type,
+	"http2_response_timeout":      types.Int64Type,
+	"destination_ip":              types.StringType,
+	"fqdn_mapping_alias":          types.StringType,
 }
 
 var authenticationAttrTypes = map[string]attr.Type{
@@ -195,55 +195,55 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 				Description: "Application type variant (e.g. ericssonVTap)",
 				Optional:    true,
 			},
-			"ipMappingAlias": schema.StringAttribute{
+			"ip_mapping_alias": schema.StringAttribute{
 				Description: "IP mapping alias for NF instance resolution",
 				Optional:    true,
 			},
-			"http2SynthesizeToolMtuPacketSize": schema.Int64Attribute{
+			"http2_synthesize_tool_mtu_packet_size": schema.Int64Attribute{
 				Description: "MTU packet size for HTTP/2 synthesize tool (0 = default)",
 				Optional:    true,
 			},
-			"http2SynthesizeIndexedHeaders": schema.BoolAttribute{
+			"http2_synthesize_indexed_headers": schema.BoolAttribute{
 				Description: "Enable indexed headers for HTTP/2 synthesize",
 				Optional:    true,
 			},
-			"http2SynthesizeCompressedHeaders": schema.BoolAttribute{
+			"http2_synthesize_compressed_headers": schema.BoolAttribute{
 				Description: "Enable compressed headers for HTTP/2 synthesize",
 				Optional:    true,
 			},
-			"transactionLog": schema.BoolAttribute{
+			"transaction_log": schema.BoolAttribute{
 				Description: "Enable transaction logging",
 				Optional:    true,
 			},
-			"transactionLogFileInterval": schema.Int64Attribute{
+			"transaction_log_file_interval": schema.Int64Attribute{
 				Description: "Transaction log file rotation interval in seconds",
 				Optional:    true,
 			},
-			"logFolderSize": schema.Int64Attribute{
+			"log_folder_size": schema.Int64Attribute{
 				Description: "Maximum log folder size in MB (0 = unlimited)",
 				Optional:    true,
 			},
-			"statsLog": schema.BoolAttribute{
+			"stats_log": schema.BoolAttribute{
 				Description: "Enable statistics logging",
 				Optional:    true,
 			},
-			"logFolderLoc": schema.StringAttribute{
+			"log_folder_loc": schema.StringAttribute{
 				Description: "Log folder location path",
 				Optional:    true,
 			},
-			"ericssonVTapConfig": schema.SingleNestedAttribute{
+			"ericsson_vtap_config": schema.SingleNestedAttribute{
 				Description: "Ericsson vTap specific configuration",
 				Optional:    true,
 				Attributes: map[string]schema.Attribute{
 					"mode": schema.StringAttribute{Description: "vTap mode (e.g. L7json)", Optional: true},
-					"eevtapVersion": schema.StringAttribute{Description: "Ericsson vTap version", Optional: true},
-					"numTCPFlows": schema.Int64Attribute{Description: "Number of TCP flows", Optional: true},
-					"tcpFlowTimeout": schema.Int64Attribute{Description: "TCP flow timeout in seconds", Optional: true},
-					"numStreamsPerFlow": schema.Int64Attribute{Description: "Number of streams per flow", Optional: true},
-					"http2RequestTimeout": schema.Int64Attribute{Description: "HTTP/2 request timeout in seconds", Optional: true},
-					"http2ResponseTimeout": schema.Int64Attribute{Description: "HTTP/2 response timeout in seconds", Optional: true},
-					"destinationIP": schema.StringAttribute{Description: "Destination IP address or label (e.g. SCP)", Optional: true},
-					"fqdnMappingAlias": schema.StringAttribute{Description: "FQDN mapping alias", Optional: true},
+					"eevtap_version": schema.StringAttribute{Description: "Ericsson vTap version", Optional: true},
+					"num_tcp_flows": schema.Int64Attribute{Description: "Number of TCP flows", Optional: true},
+					"tcp_flow_timeout": schema.Int64Attribute{Description: "TCP flow timeout in seconds", Optional: true},
+					"num_streams_per_flow": schema.Int64Attribute{Description: "Number of streams per flow", Optional: true},
+					"http2_request_timeout": schema.Int64Attribute{Description: "HTTP/2 request timeout in seconds", Optional: true},
+					"http2_response_timeout": schema.Int64Attribute{Description: "HTTP/2 response timeout in seconds", Optional: true},
+					"destination_ip": schema.StringAttribute{Description: "Destination IP address or label (e.g. SCP)", Optional: true},
+					"fqdn_mapping_alias": schema.StringAttribute{Description: "FQDN mapping alias", Optional: true},
 				},
 			},
 		},
