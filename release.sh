@@ -70,14 +70,22 @@ function validate_arguments {
 
 
     # Checkout the requestd branch and make sure the local repo is clean
-    if ! git checkout $1 > /dev/null 2>&1 ; then
+    if ! git checkout $1 ; then
         echo "checkout of the requested branch $1 failed. See the above error message"
         exit 1
     fi
 
-    if ! git pull > /dev/null 2>&1 ; then
-        echo "pull of the requested branch $1 failed. See the above error message"
-        exit 1
+    # Pull from upstream if configured; otherwise pull directly from origin/branch.
+    if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" > /dev/null 2>&1 ; then
+        if ! git pull --ff-only ; then
+            echo "pull of the requested branch $1 failed. See the above error message"
+            exit 1
+        fi
+    else
+        if ! git pull --ff-only origin $1 ; then
+            echo "pull of the requested branch $1 failed. See the above error message"
+            exit 1
+        fi
     fi
 
     # Make sure that this is a clean local repo.
@@ -123,7 +131,7 @@ build_variants["windows"]="amd64"
 # Validate the arguments, and also change our working directory to the root of the git repo
 # base_name will contain the directory where the repo is present
 
-validate_arguments $*
+validate_arguments "$@"
 if [[ $# -eq 2 ]] && [[ ${2} == "true" ]]; then
     code_coverage="-cover"
 else
