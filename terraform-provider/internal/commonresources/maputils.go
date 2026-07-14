@@ -1330,6 +1330,48 @@ func greKeySchema() schema.SingleNestedAttribute {
 	}
 }
 
+type asfPacketCountVsBufferCountValidator struct{}
+
+func (v asfPacketCountVsBufferCountValidator) Description(ctx context.Context) string {
+	return "packet_count must be greater than or equal to buffering.buffer_count_before_match"
+}
+
+func (v asfPacketCountVsBufferCountValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v asfPacketCountVsBufferCountValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent AsfProfileConfigModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.Buffering == nil || parent.Buffering.BufferCountBeforeMatch.IsNull() || parent.Buffering.BufferCountBeforeMatch.IsUnknown() {
+		return
+	}
+
+	packetCount := req.ConfigValue.ValueInt32()
+	bufferCount := parent.Buffering.BufferCountBeforeMatch.ValueInt32()
+
+	if packetCount < bufferCount {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid ASF packet_count",
+			fmt.Sprintf("packet_count (%d) must be greater than or equal to buffering.buffer_count_before_match (%d)", packetCount, bufferCount),
+		)
+	}
+}
+
 // Comibine all the above rule schemas into a map rule schema.
 func RulesSchema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
@@ -1453,15 +1495,15 @@ func MapSchema() schema.Schema {
 									},
 								},
 							},
-							"timeout":      schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.AtLeast(1)}},
-							"packet_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(30), Validators: []validator.Int32{int32validator.AtLeast(1)}},
+							"timeout":      schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.Between(10, 20)}},
+							"packet_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(30), Validators: []validator.Int32{int32validator.Between(2, 100), asfPacketCountVsBufferCountValidator{}}},
 							"bidi":         schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 							"buffering": schema.SingleNestedAttribute{
 								Optional: true,
 								Attributes: map[string]schema.Attribute{
 									"enabled":                   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 									"protocol":                  schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("tcpUdp")},
-									"buffer_count_before_match": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(20), Validators: []validator.Int32{int32validator.AtLeast(1)}},
+									"buffer_count_before_match": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(20), Validators: []validator.Int32{int32validator.Between(3, 20)}},
 								},
 							},
 						},
