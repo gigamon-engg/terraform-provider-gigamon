@@ -1474,10 +1474,29 @@ func MapSchema() schema.Schema {
 						Attributes: map[string]schema.Attribute{
 							"session_fields": schema.ListNestedAttribute{
 								Optional: true,
+								Computed: true,
+								Validators: []validator.List{
+									listvalidator.SizeAtLeast(1),
+									listvalidator.SizeAtMost(2),
+								},
 								NestedObject: schema.NestedAttributeObject{
 									Attributes: map[string]schema.Attribute{
-										"pos":  schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.AtLeast(0)}},
-										"type": schema.StringAttribute{Required: true},
+										"pos": schema.Int32Attribute{
+											Optional: true,
+											Computed: true,
+											Default:  int32default.StaticInt32(2),
+											Validators: []validator.Int32{
+												int32validator.OneOf(2),
+											},
+										},
+										"type": schema.StringAttribute{
+											Optional: true,
+											Computed: true,
+											Default:  stringdefault.StaticString("fiveTuple"),
+											Validators: []validator.String{
+												stringvalidator.OneOf("fiveTuple", "vlanId"),
+											},
+										},
 									},
 								},
 							},

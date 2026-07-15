@@ -23,6 +23,7 @@ import (
 var _ resource.Resource = &TrafficMap{}
 var _ resource.Resource = &InclusionMap{}
 var _ resource.Resource = &ExclusionMap{}
+var _ resource.ResourceWithValidateConfig = &TrafficMap{}
 
 // TrafficMap resoruce, which manages the Maps for Traffic Handling
 func NewTrafficMap() resource.Resource {
@@ -62,6 +63,30 @@ func (tm *TrafficMap) Schema(ctx context.Context, req resource.SchemaRequest, re
 	resp.Schema = MapSchema()
 }
 
+func (tm *TrafficMap) ValidateConfig(
+	ctx context.Context,
+	req resource.ValidateConfigRequest,
+	resp *resource.ValidateConfigResponse,
+) {
+	if !req.Config.Raw.IsFullyKnown() {
+		return
+	}
+
+	var cfg MapModel
+	diags := req.Config.Get(ctx, &cfg)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if cfg.Asf != nil && cfg.Asf.AsfProfileConfig == nil {
+		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+
+	applyAndValidateAsfSessionFields(cfg.Asf, &resp.Diagnostics)
+}
+
 // Initial Configure call, to initialize the Provider
 func (tm *TrafficMap) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	// Prevent panic if the provider has not been configured.
@@ -93,6 +118,10 @@ func (tm *TrafficMap) Create(ctx context.Context, req resource.CreateRequest, re
 
 	if data.Asf != nil && data.Asf.AsfProfileConfig == nil {
 		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+	applyAndValidateAsfSessionFields(data.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -190,6 +219,10 @@ func (tm *TrafficMap) Update(ctx context.Context, req resource.UpdateRequest, re
 
 	if planData.Asf != nil && planData.Asf.AsfProfileConfig == nil {
 		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+	applyAndValidateAsfSessionFields(planData.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -526,6 +559,86 @@ func validateNilPassRules(ruleSets []RuleSetModel, diags *diag.Diagnostics) {
 					"Remove pass_rules from this rule_set.",
 			)
 		}
+	}
+}
+
+func applyAndValidateAsfSessionFields(asf *AsfModel, diags *diag.Diagnostics) {
+	if asf == nil || asf.AsfProfileConfig == nil {
+		return
+	}
+
+	if len(asf.AsfProfileConfig.SessionFields) == 0 {
+		asf.AsfProfileConfig.SessionFields = []AsfSessionFieldModel{
+			{
+				Pos:  types.Int32Value(2),
+				Type: types.StringValue("fiveTuple"),
+			},
+		}
+	}
+
+	fields := asf.AsfProfileConfig.SessionFields
+	if len(fields) < 1 || len(fields) > 2 {
+		diags.AddAttributeError(
+			path.Root("asf").AtName("asf_profile_config").AtName("session_fields"),
+			"Invalid ASF session fields length",
+			"asf.asf_profile_config.session_fields must contain between 1 and 2 entries.",
+		)
+		return
+	}
+
+	fiveTupleCount := 0
+	vlanIdCount := 0
+
+	for i, sf := range fields {
+		if sf.Pos.IsNull() || sf.Pos.IsUnknown() || sf.Pos.ValueInt32() != 2 {
+			diags.AddAttributeError(
+				path.Root("asf").AtName("asf_profile_config").AtName("session_fields").AtListIndex(i).AtName("pos"),
+				"Invalid ASF session field pos",
+				"asf.asf_profile_config.session_fields.pos must be 2.",
+			)
+		}
+
+		if sf.Type.IsNull() || sf.Type.IsUnknown() {
+			diags.AddAttributeError(
+				path.Root("asf").AtName("asf_profile_config").AtName("session_fields").AtListIndex(i).AtName("type"),
+				"Invalid ASF session field type",
+				"asf.asf_profile_config.session_fields.type must be fiveTuple or vlanId.",
+			)
+			continue
+		}
+
+		t := sf.Type.ValueString()
+		if t != "fiveTuple" && t != "vlanId" {
+			diags.AddAttributeError(
+				path.Root("asf").AtName("asf_profile_config").AtName("session_fields").AtListIndex(i).AtName("type"),
+				"Invalid ASF session field type",
+				"asf.asf_profile_config.session_fields.type must be fiveTuple or vlanId.",
+			)
+			continue
+		}
+
+		if t == "fiveTuple" {
+			fiveTupleCount++
+		}
+		if t == "vlanId" {
+			vlanIdCount++
+		}
+	}
+
+	if fiveTupleCount != 1 {
+		diags.AddAttributeError(
+			path.Root("asf").AtName("asf_profile_config").AtName("session_fields"),
+			"Invalid ASF session fields configuration",
+			"asf.asf_profile_config.session_fields must contain exactly one entry with type fiveTuple.",
+		)
+	}
+
+	if vlanIdCount > 1 || len(fields) != fiveTupleCount+vlanIdCount {
+		diags.AddAttributeError(
+			path.Root("asf").AtName("asf_profile_config").AtName("session_fields"),
+			"Invalid ASF session fields configuration",
+			"asf.asf_profile_config.session_fields may include at most one optional vlanId entry in addition to fiveTuple.",
+		)
 	}
 }
 

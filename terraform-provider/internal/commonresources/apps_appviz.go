@@ -14,10 +14,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -33,6 +35,8 @@ import (
 var _ resource.Resource = &AppViz{}
 var _ resource.ResourceWithConfigure = &AppViz{}
 var _ resource.ResourceWithImportState = &AppViz{}
+var _ resource.ResourceWithValidateConfig = &AppViz{}
+
 
 func NewAppViz() resource.Resource {
 	return &AppViz{}
@@ -123,26 +127,34 @@ func (r *AppViz) Schema(ctx context.Context, req resource.SchemaRequest, resp *r
 				Default:     booldefault.StaticBool(true),
 			},
 			"exporter_config": schema.SingleNestedAttribute{
-				Description: "Exporter configuration for App Viz.",
-				Optional:    true,
+				Description: "Exporter configuration for App Viz. This is required.",
+				Required:    true,
 				Attributes: map[string]schema.Attribute{
 					"monitor": schema.SingleNestedAttribute{
 						Description: "Monitor-specific export behavior.",
 						Optional:    true,
+						Computed:    true,
+						Default: objectdefault.StaticValue(
+							types.ObjectValueMust(
+								map[string]attr.Type{"timeout": types.Int32Type},
+								map[string]attr.Value{"timeout": types.Int32Value(300)},
+							),
+						),
 						Attributes: map[string]schema.Attribute{
 							"timeout": schema.Int32Attribute{
-								Description: "Monitor timeout in seconds.",
+								Description: "Monitor timeout in seconds. Fixed at 300 for App Viz; not user-configurable.",
 								Optional:    true,
 								Computed:    true,
 								Default:     int32default.StaticInt32(300),
 								Validators: []validator.Int32{
-									int32validator.AtLeast(1),
+									int32validator.OneOf(300),
 								},
 							},
 						},
 					},
 				},
 			},
+
 			"mgmt_interface": schema.StringAttribute{
 				Description: "Management interface used by App Viz. Valid values: internal, external.",
 				Optional:    true,
@@ -176,7 +188,7 @@ func (r *AppViz) Configure(ctx context.Context, req resource.ConfigureRequest, r
 func (r *AppViz) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AppVizModel
 
-	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -386,32 +398,63 @@ func (r *AppViz) ImportState(ctx context.Context, req resource.ImportStateReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func buildFMAppVizPayload(ctx context.Context, model AppVizModel) FMAppViz {
-	fmData := FMAppViz{
-		Name:          "appviz",
-		Alias:         model.Alias.ValueString(),
-		Description:   model.Description.ValueString(),
-		Action:        model.Action.ValueBool(),
-		MgmtInterface: model.MgmtInterface.ValueString(),
-	}
+func (r *AppViz) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+    var data AppVizModel
 
-	if !model.ExporterConfig.IsNull() && !model.ExporterConfig.IsUnknown() {
-		var exporterCfg AppVizExporterConfigModel
-		_ = model.ExporterConfig.As(ctx, &exporterCfg, basetypes.ObjectAsOptions{})
+    resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+    if resp.Diagnostics.HasError() {
+        return
+    }
 
-		if !exporterCfg.Monitor.IsNull() && !exporterCfg.Monitor.IsUnknown() {
-			var monitorCfg AppVizMonitorModel
-			_ = exporterCfg.Monitor.As(ctx, &monitorCfg, basetypes.ObjectAsOptions{})
-			fmData.ExporterConfig = &FMAppVizExporterConfig{
-				Monitor: &FMAppVizMonitor{
-					Timeout: monitorCfg.Timeout.ValueInt32(),
-				},
-			}
-		}
-	}
-
-	return fmData
+    if data.ExporterConfig.IsNull() {
+        resp.Diagnostics.AddAttributeError(
+            path.Root("exporter_config"),
+            "Missing Required Attribute",
+            "exporter_config is required and cannot be null. Please provide an exporter_config block (e.g. with a monitor.timeout setting) for the App Viz application.",
+        )
+        return
+    }
 }
+
+func buildFMAppVizPayload(ctx context.Context, model AppVizModel) FMAppViz {
+    fmData := FMAppViz{
+        Name:          "appviz",
+        Alias:         model.Alias.ValueString(),
+        Description:   model.Description.ValueString(),
+        Action:        model.Action.ValueBool(), // defaults to true via schema Default
+        MgmtInterface: model.MgmtInterface.ValueString(),
+    }
+
+    if model.ExporterConfig.IsNull() {
+        panic("exporter_config is required and cannot be null")
+    }
+
+    // Always default the monitor timeout to 300, regardless of whether the
+    // "monitor" sub-block was supplied in config, since it is fixed/non-configurable.
+    timeout := int32(300)
+
+    if !model.ExporterConfig.IsNull() && !model.ExporterConfig.IsUnknown() {
+        var exporterCfg AppVizExporterConfigModel
+        _ = model.ExporterConfig.As(ctx, &exporterCfg, basetypes.ObjectAsOptions{})
+
+        if !exporterCfg.Monitor.IsNull() && !exporterCfg.Monitor.IsUnknown() {
+            var monitorCfg AppVizMonitorModel
+            _ = exporterCfg.Monitor.As(ctx, &monitorCfg, basetypes.ObjectAsOptions{})
+            if !monitorCfg.Timeout.IsNull() && !monitorCfg.Timeout.IsUnknown() {
+                timeout = monitorCfg.Timeout.ValueInt32()
+            }
+        }
+    }
+
+    fmData.ExporterConfig = &FMAppVizExporterConfig{
+        Monitor: &FMAppVizMonitor{
+            Timeout: timeout,
+        },
+    }
+
+    return fmData
+}
+
 
 func mapFMAppVizToState(ctx context.Context, fmData FMAppViz, sessionID string, typedID string) AppVizModel {
 	model := AppVizModel{
