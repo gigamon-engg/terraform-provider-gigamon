@@ -8,11 +8,11 @@ package commonresources
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -22,12 +22,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"terraform-provider-gigamon/internal/commonutils"
 	"terraform-provider-gigamon/internal/fmclient"
 )
+
+var pcapNGNameAliasRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 var _ resource.Resource = &AppPCapNG{}
 var _ resource.ResourceWithConfigure = &AppPCapNG{}
@@ -42,37 +43,25 @@ type AppPCapNG struct {
 }
 
 type AppPCapNGModel struct {
-	Id                  types.String `tfsdk:"id"`
-	MonitoringSessionId types.String `tfsdk:"monitoring_session_id"`
-	CaptureMode         types.String `tfsdk:"capture_mode"`
-	PacketFilter        types.Object `tfsdk:"packet_filter"`
-	OutputConfig        types.Object `tfsdk:"output_config"`
-	Performance         types.Object `tfsdk:"performance"`
-}
-
-type PacketFilterModel struct {
-	BPFSyntax  types.String `tfsdk:"bpf_syntax"`
-	SourceIP   types.String `tfsdk:"source_ip"`
-	DestIP     types.String `tfsdk:"dest_ip"`
-	VLANFilter types.List   `tfsdk:"vlan_filter"`
-}
-
-type OutputConfigModel struct {
-	FilePath    types.String `tfsdk:"file_path"`
-	MaxFileSize types.Int32  `tfsdk:"max_file_size"`
-	Rotation    types.Bool   `tfsdk:"rotation"`
-	Compression types.String `tfsdk:"compression"`
-}
-
-type PerformanceModel2 struct {
-	BufferSize    types.Int32 `tfsdk:"buffer_size"`
-	ThreadCount   types.Int32 `tfsdk:"thread_count"`
-	PacketSnaplen types.Int32 `tfsdk:"packet_snaplen"`
+	Id                   types.String `tfsdk:"id"`
+	MonitoringSessionId  types.String `tfsdk:"monitoring_session_id"`
+	Alias                types.String `tfsdk:"alias"`
+	Name                 types.String `tfsdk:"name"`
+	AppMode              types.String `tfsdk:"app_mode"`
+	DomainClassification types.Bool   `tfsdk:"domain_classification"`
+	DomainTableAlias     types.String `tfsdk:"domain_table_alias"`
+	FlowTimeout          types.Int32  `tfsdk:"flow_timeout"`
 }
 
 type FMPCapNG struct {
-	AppType   string                 `json:"app_type"`
-	AppConfig map[string]interface{} `json:"app_config"`
+	AppType              string                 `json:"app_type"`
+	Alias                string                 `json:"alias"`
+	Name                 string                 `json:"name"`
+	AppMode              string                 `json:"appMode"`
+	DomainClassification *bool                  `json:"domainClassification"`
+	DomainTableAlias     string                 `json:"domainTableAlias"`
+	FlowTimeout          *int32                 `json:"flowTimeout"`
+	AppConfig            map[string]interface{} `json:"app_config"`
 }
 
 func (r *AppPCapNG) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -100,102 +89,46 @@ func (r *AppPCapNG) Schema(ctx context.Context, req resource.SchemaRequest, resp
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"capture_mode": schema.StringAttribute{
-				Description: "Capture mode: continuous, on-demand, or triggered",
+			"alias": schema.StringAttribute{
+				Description: "Alias for the PCapNG application.",
 				Required:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("continuous", "on-demand", "triggered"),
+					stringvalidator.LengthAtLeast(1),
+					stringvalidator.RegexMatches(pcapNGNameAliasRegex, "only alphanumeric, '-' and '_' are allowed"),
 				},
 			},
-			"packet_filter": schema.SingleNestedAttribute{
-				Description: "Packet filter configuration",
-				Optional:    true,
-				Attributes: map[string]schema.Attribute{
-					"bpf_syntax": schema.StringAttribute{
-						Description: "BPF filter syntax",
-						Optional:    true,
-					},
-					"source_ip": schema.StringAttribute{
-						Description: "Source IP filter",
-						Optional:    true,
-					},
-					"dest_ip": schema.StringAttribute{
-						Description: "Destination IP filter",
-						Optional:    true,
-					},
-					"vlan_filter": schema.ListAttribute{
-						Description: "VLAN IDs to filter",
-						ElementType: types.Int32Type,
-						Optional:    true,
-					},
+			"name": schema.StringAttribute{
+				Description: "Name for the PCapNG application.",
+				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+					stringvalidator.RegexMatches(pcapNGNameAliasRegex, "only alphanumeric, '-' and '_' are allowed"),
 				},
 			},
-			"output_config": schema.SingleNestedAttribute{
-				Description: "Output configuration",
+			"app_mode": schema.StringAttribute{
+				Description: "App mode. Either primary or secondary.",
 				Optional:    true,
-				Attributes: map[string]schema.Attribute{
-					"file_path": schema.StringAttribute{
-						Description: "Output file path",
-						Optional:    true,
-					},
-					"max_file_size": schema.Int32Attribute{
-						Description: "Max file size in MB: 1-10000",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(100),
-						Validators: []validator.Int32{
-							int32validator.Between(1, 10000),
-						},
-					},
-					"rotation": schema.BoolAttribute{
-						Description: "Enable file rotation",
-						Optional:    true,
-						Computed:    true,
-						Default:     booldefault.StaticBool(false),
-					},
-					"compression": schema.StringAttribute{
-						Description: "Compression: none, gzip, or xz",
-						Optional:    true,
-						Computed:    true,
-						Default:     stringdefault.StaticString("none"),
-						Validators: []validator.String{
-							stringvalidator.OneOf("none", "gzip", "xz"),
-						},
-					},
+				Computed:    true,
+				Default:     stringdefault.StaticString("secondary"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("primary", "secondary"),
 				},
 			},
-			"performance": schema.SingleNestedAttribute{
-				Description: "Performance configuration",
+			"domain_classification": schema.BoolAttribute{
+				Description: "Configurable only when app_mode is primary.",
 				Optional:    true,
-				Attributes: map[string]schema.Attribute{
-					"buffer_size": schema.Int32Attribute{
-						Description: "Buffer size in MB: 4-1024",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(64),
-						Validators: []validator.Int32{
-							int32validator.Between(4, 1024),
-						},
-					},
-					"thread_count": schema.Int32Attribute{
-						Description: "Thread count: 1-16",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(4),
-						Validators: []validator.Int32{
-							int32validator.Between(1, 16),
-						},
-					},
-					"packet_snaplen": schema.Int32Attribute{
-						Description: "Packet snaplen: 64-65535",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(65535),
-						Validators: []validator.Int32{
-							int32validator.Between(64, 65535),
-						},
-					},
-				},
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+			},
+			"domain_table_alias": schema.StringAttribute{
+				Description: "Configurable only when app_mode is primary and domain_classification is true.",
+				Optional:    true,
+			},
+			"flow_timeout": schema.Int32Attribute{
+				Description: "Configurable only when app_mode is primary and domain_classification is true. Range: 360-1860.",
+				Optional:    true,
+				Computed:    true,
+				Default:     int32default.StaticInt32(660),
 			},
 		},
 	}
@@ -220,8 +153,14 @@ func (r *AppPCapNG) Create(ctx context.Context, req resource.CreateRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	validatePCapNGModel(&resp.Diagnostics, data)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	sessionID := data.MonitoringSessionId.ValueString()
-	payload := buildFMPCapNGPayload(ctx, data)
+	payload := buildFMPCapNGPayload(data)
 	updateReq := commonutils.UpdateReq{
 		Requests: []commonutils.UpdateObject{{
 			EntityType:  "application",
@@ -234,17 +173,19 @@ func (r *AppPCapNG) Create(ctx context.Context, req resource.CreateRequest, resp
 		resp.Diagnostics.AddError("Error creating PCapNG app", err.Error())
 		return
 	}
+
 	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.TypePCapNG, id)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
 		return
 	}
+
 	fmData := FMPCapNG{}
-	err = GetMSAppData(ctx, sessionID, id, "PCapNG", "", &fmData, r.fmClient)
+	err = GetMSAppData(ctx, sessionID, id, "pcapng", "", &fmData, r.fmClient)
 	if err != nil {
 		tflog.Warn(ctx, fmt.Sprintf("Failed to fetch created PCapNG app: %v", err))
 	} else {
-		data = mapFMPCapNGToState(ctx, fmData, sessionID, typedID)
+		data = mapFMPCapNGToState(fmData, sessionID, typedID)
 	}
 	data.Id = types.StringValue(typedID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -256,6 +197,7 @@ func (r *AppPCapNG) Read(ctx context.Context, req resource.ReadRequest, resp *re
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
 	sessionID := data.MonitoringSessionId.ValueString()
 	typedID := data.Id.ValueString()
 	rawID, err := commonutils.UUIDFromTypedID(typedID)
@@ -263,8 +205,9 @@ func (r *AppPCapNG) Read(ctx context.Context, req resource.ReadRequest, resp *re
 		resp.Diagnostics.AddError("Error parsing app ID", err.Error())
 		return
 	}
+
 	fmData := FMPCapNG{}
-	err = GetMSAppData(ctx, sessionID, rawID, "PCapNG", "", &fmData, r.fmClient)
+	err = GetMSAppData(ctx, sessionID, rawID, "pcapng", "", &fmData, r.fmClient)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			resp.State.RemoveResource(ctx)
@@ -273,7 +216,8 @@ func (r *AppPCapNG) Read(ctx context.Context, req resource.ReadRequest, resp *re
 		resp.Diagnostics.AddError("Error reading PCapNG app", err.Error())
 		return
 	}
-	data = mapFMPCapNGToState(ctx, fmData, sessionID, typedID)
+
+	data = mapFMPCapNGToState(fmData, sessionID, typedID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -283,6 +227,12 @@ func (r *AppPCapNG) Update(ctx context.Context, req resource.UpdateRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	validatePCapNGModel(&resp.Diagnostics, planData)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	sessionID := planData.MonitoringSessionId.ValueString()
 	typedID := planData.Id.ValueString()
 	rawID, err := commonutils.UUIDFromTypedID(typedID)
@@ -290,7 +240,8 @@ func (r *AppPCapNG) Update(ctx context.Context, req resource.UpdateRequest, resp
 		resp.Diagnostics.AddError("Error parsing app ID", err.Error())
 		return
 	}
-	payload := buildFMPCapNGPayload(ctx, planData)
+
+	payload := buildFMPCapNGPayload(planData)
 	payload["id"] = rawID
 	updateReq := commonutils.UpdateReq{
 		Requests: []commonutils.UpdateObject{{
@@ -304,12 +255,13 @@ func (r *AppPCapNG) Update(ctx context.Context, req resource.UpdateRequest, resp
 		resp.Diagnostics.AddError("Error updating PCapNG app", err.Error())
 		return
 	}
+
 	fmData := FMPCapNG{}
-	err = GetMSAppData(ctx, sessionID, rawID, "PCapNG", "", &fmData, r.fmClient)
+	err = GetMSAppData(ctx, sessionID, rawID, "pcapng", "", &fmData, r.fmClient)
 	if err != nil {
 		tflog.Warn(ctx, fmt.Sprintf("Failed to fetch updated PCapNG app: %v", err))
 	} else {
-		planData = mapFMPCapNGToState(ctx, fmData, sessionID, typedID)
+		planData = mapFMPCapNGToState(fmData, sessionID, typedID)
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &planData)...)
 }
@@ -320,6 +272,7 @@ func (r *AppPCapNG) Delete(ctx context.Context, req resource.DeleteRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
 	sessionID := data.MonitoringSessionId.ValueString()
 	typedID := data.Id.ValueString()
 	rawID, err := commonutils.UUIDFromTypedID(typedID)
@@ -327,12 +280,14 @@ func (r *AppPCapNG) Delete(ctx context.Context, req resource.DeleteRequest, resp
 		resp.Diagnostics.AddError("Error parsing app ID", err.Error())
 		return
 	}
+
 	updateReq := commonutils.UpdateReq{
 		Requests: []commonutils.UpdateObject{{
 			EntityType: "application",
 			Operation:  "delete",
 			Application: map[string]interface{}{
 				"id":       rawID,
+				"name":     "pcapng",
 				"app_type": "PCapNG",
 			},
 		}},
@@ -350,184 +305,145 @@ func (r *AppPCapNG) ImportState(ctx context.Context, req resource.ImportStateReq
 		resp.Diagnostics.AddError("Invalid import ID format", fmt.Sprintf("Expected session_id::app_id, got %s", req.ID))
 		return
 	}
+
 	sessionID := parts[0]
 	rawID := parts[1]
 	fmData := FMPCapNG{}
-	err := GetMSAppData(ctx, sessionID, rawID, "PCapNG", "", &fmData, r.fmClient)
+	err := GetMSAppData(ctx, sessionID, rawID, "pcapng", "", &fmData, r.fmClient)
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading PCapNG app for import", err.Error())
 		return
 	}
+
 	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.TypePCapNG, rawID)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
 		return
 	}
-	data := mapFMPCapNGToState(ctx, fmData, sessionID, typedID)
+
+	data := mapFMPCapNGToState(fmData, sessionID, typedID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func buildFMPCapNGPayload(ctx context.Context, model AppPCapNGModel) map[string]interface{} {
-	appConfig := map[string]interface{}{
-		"capture_mode": model.CaptureMode.ValueString(),
+func buildFMPCapNGPayload(model AppPCapNGModel) map[string]interface{} {
+	appMode := model.AppMode.ValueString()
+	if appMode == "" {
+		appMode = "secondary"
 	}
-	if !model.PacketFilter.IsNull() && !model.PacketFilter.IsUnknown() {
-		var filterModel PacketFilterModel
-		_ = model.PacketFilter.As(ctx, &filterModel, basetypes.ObjectAsOptions{})
-		filterCfg := map[string]interface{}{}
-		if !filterModel.BPFSyntax.IsNull() {
-			filterCfg["bpf_syntax"] = filterModel.BPFSyntax.ValueString()
-		}
-		if !filterModel.SourceIP.IsNull() {
-			filterCfg["source_ip"] = filterModel.SourceIP.ValueString()
-		}
-		if !filterModel.DestIP.IsNull() {
-			filterCfg["dest_ip"] = filterModel.DestIP.ValueString()
-		}
-		if !filterModel.VLANFilter.IsNull() && !filterModel.VLANFilter.IsUnknown() {
-			var vlans []int32
-			filterModel.VLANFilter.ElementsAs(ctx, &vlans, false)
-			filterCfg["vlan_filter"] = vlans
-		}
-		appConfig["packet_filter"] = filterCfg
+
+	payload := map[string]interface{}{
+		"name":    "pcapng",
+		"alias":   model.Alias.ValueString(),
+		"appMode": appMode,
 	}
-	if !model.OutputConfig.IsNull() && !model.OutputConfig.IsUnknown() {
-		var outModel OutputConfigModel
-		_ = model.OutputConfig.As(ctx, &outModel, basetypes.ObjectAsOptions{})
-		appConfig["output_config"] = map[string]interface{}{
-			"file_path":     outModel.FilePath.ValueString(),
-			"max_file_size": outModel.MaxFileSize.ValueInt32(),
-			"rotation":      outModel.Rotation.ValueBool(),
-			"compression":   outModel.Compression.ValueString(),
+
+	if appMode == "primary" {
+		domainClassification := model.DomainClassification.ValueBool()
+		payload["domainClassification"] = domainClassification
+		if domainClassification {
+			if !model.DomainTableAlias.IsNull() && !model.DomainTableAlias.IsUnknown() {
+				payload["domainTableAlias"] = model.DomainTableAlias.ValueString()
+			}
+			payload["flowTimeout"] = model.FlowTimeout.ValueInt32()
 		}
 	}
-	if !model.Performance.IsNull() && !model.Performance.IsUnknown() {
-		var perfModel PerformanceModel2
-		_ = model.Performance.As(ctx, &perfModel, basetypes.ObjectAsOptions{})
-		appConfig["performance"] = map[string]interface{}{
-			"buffer_size":    perfModel.BufferSize.ValueInt32(),
-			"thread_count":   perfModel.ThreadCount.ValueInt32(),
-			"packet_snaplen": perfModel.PacketSnaplen.ValueInt32(),
-		}
-	}
-	return map[string]interface{}{
-		"app_type":   "PCapNG",
-		"app_config": appConfig,
-	}
+
+	return payload
 }
 
-func mapFMPCapNGToState(ctx context.Context, fmData FMPCapNG, sessionID string, typedID string) AppPCapNGModel {
+func mapFMPCapNGToState(fmData FMPCapNG, sessionID string, typedID string) AppPCapNGModel {
 	model := AppPCapNGModel{
-		Id:                  types.StringValue(typedID),
-		MonitoringSessionId: types.StringValue(sessionID),
-		CaptureMode:         types.StringValue("continuous"),
-		PacketFilter: types.ObjectNull(map[string]attr.Type{
-			"bpf_syntax": types.StringType,
-			"source_ip":  types.StringType,
-			"dest_ip":    types.StringType,
-			"vlan_filter": types.ListType{
-				ElemType: types.Int32Type,
-			},
-		}),
-		OutputConfig: types.ObjectNull(map[string]attr.Type{
-			"file_path":     types.StringType,
-			"max_file_size": types.Int32Type,
-			"rotation":      types.BoolType,
-			"compression":   types.StringType,
-		}),
-		Performance: types.ObjectNull(map[string]attr.Type{
-			"buffer_size":    types.Int32Type,
-			"thread_count":   types.Int32Type,
-			"packet_snaplen": types.Int32Type,
-		}),
+		Id:                   types.StringValue(typedID),
+		MonitoringSessionId:  types.StringValue(sessionID),
+		Alias:                types.StringNull(),
+		Name:                 types.StringNull(),
+		AppMode:              types.StringValue("secondary"),
+		DomainClassification: types.BoolValue(false),
+		DomainTableAlias:     types.StringNull(),
+		FlowTimeout:          types.Int32Value(660),
 	}
+
+	if fmData.Alias != "" {
+		model.Alias = types.StringValue(fmData.Alias)
+	}
+	if fmData.Name != "" {
+		model.Name = types.StringValue(fmData.Name)
+	}
+	if fmData.AppMode != "" {
+		model.AppMode = types.StringValue(fmData.AppMode)
+	}
+	if fmData.DomainClassification != nil {
+		model.DomainClassification = types.BoolValue(*fmData.DomainClassification)
+	}
+	if fmData.DomainTableAlias != "" {
+		model.DomainTableAlias = types.StringValue(fmData.DomainTableAlias)
+	}
+	if fmData.FlowTimeout != nil {
+		model.FlowTimeout = types.Int32Value(*fmData.FlowTimeout)
+	}
+
 	if fmData.AppConfig != nil {
-		if captureMode, ok := fmData.AppConfig["capture_mode"].(string); ok {
-			model.CaptureMode = types.StringValue(captureMode)
+		if alias, ok := fmData.AppConfig["alias"].(string); ok {
+			model.Alias = types.StringValue(alias)
 		}
-		if filterCfg, ok := fmData.AppConfig["packet_filter"].(map[string]interface{}); ok {
-			filterModel := PacketFilterModel{
-				BPFSyntax: types.StringValue(""),
-				SourceIP:  types.StringValue(""),
-				DestIP:    types.StringValue(""),
-				VLANFilter: types.ListNull(types.Int32Type),
-			}
-			if bpf, ok := filterCfg["bpf_syntax"].(string); ok {
-				filterModel.BPFSyntax = types.StringValue(bpf)
-			}
-			if srcIP, ok := filterCfg["source_ip"].(string); ok {
-				filterModel.SourceIP = types.StringValue(srcIP)
-			}
-			if dstIP, ok := filterCfg["dest_ip"].(string); ok {
-				filterModel.DestIP = types.StringValue(dstIP)
-			}
-			if vlans, ok := filterCfg["vlan_filter"].([]interface{}); ok {
-				var vlanInts []int32
-				for _, v := range vlans {
-					if vID, ok := v.(float64); ok {
-						vlanInts = append(vlanInts, int32(vID))
-					}
-				}
-				vlanObj, _ := types.ListValueFrom(ctx, types.Int32Type, vlanInts)
-				filterModel.VLANFilter = vlanObj
-			}
-			filterObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"bpf_syntax":  types.StringType,
-				"source_ip":   types.StringType,
-				"dest_ip":     types.StringType,
-				"vlan_filter": types.ListType{ElemType: types.Int32Type},
-			}, filterModel)
-			model.PacketFilter = filterObj
+		if name, ok := fmData.AppConfig["name"].(string); ok {
+			model.Name = types.StringValue(name)
 		}
-		if outCfg, ok := fmData.AppConfig["output_config"].(map[string]interface{}); ok {
-			outModel := OutputConfigModel{
-				FilePath:    types.StringValue(""),
-				MaxFileSize: types.Int32Value(100),
-				Rotation:    types.BoolValue(false),
-				Compression: types.StringValue("none"),
-			}
-			if filePath, ok := outCfg["file_path"].(string); ok {
-				outModel.FilePath = types.StringValue(filePath)
-			}
-			if maxSize, ok := outCfg["max_file_size"].(float64); ok {
-				outModel.MaxFileSize = types.Int32Value(int32(maxSize))
-			}
-			if rotation, ok := outCfg["rotation"].(bool); ok {
-				outModel.Rotation = types.BoolValue(rotation)
-			}
-			if compression, ok := outCfg["compression"].(string); ok {
-				outModel.Compression = types.StringValue(compression)
-			}
-			outObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"file_path":     types.StringType,
-				"max_file_size": types.Int32Type,
-				"rotation":      types.BoolType,
-				"compression":   types.StringType,
-			}, outModel)
-			model.OutputConfig = outObj
+		if appMode, ok := fmData.AppConfig["appMode"].(string); ok {
+			model.AppMode = types.StringValue(appMode)
 		}
-		if perfCfg, ok := fmData.AppConfig["performance"].(map[string]interface{}); ok {
-			perfModel := PerformanceModel2{
-				BufferSize:    types.Int32Value(64),
-				ThreadCount:   types.Int32Value(4),
-				PacketSnaplen: types.Int32Value(65535),
-			}
-			if bufSize, ok := perfCfg["buffer_size"].(float64); ok {
-				perfModel.BufferSize = types.Int32Value(int32(bufSize))
-			}
-			if thrCount, ok := perfCfg["thread_count"].(float64); ok {
-				perfModel.ThreadCount = types.Int32Value(int32(thrCount))
-			}
-			if snaplen, ok := perfCfg["packet_snaplen"].(float64); ok {
-				perfModel.PacketSnaplen = types.Int32Value(int32(snaplen))
-			}
-			perfObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"buffer_size":    types.Int32Type,
-				"thread_count":   types.Int32Type,
-				"packet_snaplen": types.Int32Type,
-			}, perfModel)
-			model.Performance = perfObj
+		if domainClassification, ok := fmData.AppConfig["domainClassification"].(bool); ok {
+			model.DomainClassification = types.BoolValue(domainClassification)
+		}
+		if domainTableAlias, ok := fmData.AppConfig["domainTableAlias"].(string); ok {
+			model.DomainTableAlias = types.StringValue(domainTableAlias)
+		}
+
+		if flowTimeout, ok := fmData.AppConfig["flowTimeout"].(float64); ok {
+			model.FlowTimeout = types.Int32Value(int32(flowTimeout))
+		} else if flowTimeout, ok := fmData.AppConfig["flowTimeout"].(int32); ok {
+			model.FlowTimeout = types.Int32Value(flowTimeout)
+		} else if flowTimeout, ok := fmData.AppConfig["flowTimeout"].(int); ok {
+			model.FlowTimeout = types.Int32Value(int32(flowTimeout))
 		}
 	}
+
 	return model
+}
+
+func validatePCapNGModel(diags *diag.Diagnostics, model AppPCapNGModel) {
+	appMode := model.AppMode.ValueString()
+	if appMode == "" {
+		appMode = "secondary"
+	}
+
+	if appMode != "primary" {
+		if !model.DomainClassification.IsNull() && !model.DomainClassification.IsUnknown() && model.DomainClassification.ValueBool() {
+			diags.AddError("Invalid domain_classification", "domain_classification can be set to true only when app_mode is primary")
+		}
+		if !model.DomainTableAlias.IsNull() && !model.DomainTableAlias.IsUnknown() && model.DomainTableAlias.ValueString() != "" {
+			diags.AddError("Invalid domain_table_alias", "domain_table_alias can be configured only when app_mode is primary and domain_classification is true")
+		}
+		if !model.FlowTimeout.IsNull() && !model.FlowTimeout.IsUnknown() && model.FlowTimeout.ValueInt32() != 660 {
+			diags.AddError("Invalid flow_timeout", "flow_timeout can be configured only when app_mode is primary and domain_classification is true")
+		}
+		return
+	}
+
+	if !model.DomainClassification.IsNull() && !model.DomainClassification.IsUnknown() && !model.DomainClassification.ValueBool() {
+		if !model.DomainTableAlias.IsNull() && !model.DomainTableAlias.IsUnknown() && model.DomainTableAlias.ValueString() != "" {
+			diags.AddError("Invalid domain_table_alias", "domain_table_alias can be configured only when domain_classification is true")
+		}
+		if !model.FlowTimeout.IsNull() && !model.FlowTimeout.IsUnknown() && model.FlowTimeout.ValueInt32() != 660 {
+			diags.AddError("Invalid flow_timeout", "flow_timeout can be configured only when domain_classification is true")
+		}
+		return
+	}
+
+	if !model.FlowTimeout.IsNull() && !model.FlowTimeout.IsUnknown() {
+		flowTimeout := model.FlowTimeout.ValueInt32()
+		if flowTimeout < 360 || flowTimeout > 1860 {
+			diags.AddError("Invalid flow_timeout", "flow_timeout must be between 360 and 1860")
+		}
+	}
 }
