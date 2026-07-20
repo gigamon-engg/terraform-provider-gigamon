@@ -30,6 +30,8 @@ import (
 
 var pcapNGNameAliasRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+const pcapNGAppName = "pcapng"
+
 var _ resource.Resource = &AppPCapNG{}
 var _ resource.ResourceWithConfigure = &AppPCapNG{}
 var _ resource.ResourceWithImportState = &AppPCapNG{}
@@ -98,11 +100,10 @@ func (r *AppPCapNG) Schema(ctx context.Context, req resource.SchemaRequest, resp
 				},
 			},
 			"name": schema.StringAttribute{
-				Description: "Name for the PCapNG application.",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.LengthAtLeast(1),
-					stringvalidator.RegexMatches(pcapNGNameAliasRegex, "only alphanumeric, '-' and '_' are allowed"),
+				Description: "Internal FM application name. Always pcapng.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"app_mode": schema.StringAttribute{
@@ -153,6 +154,7 @@ func (r *AppPCapNG) Create(ctx context.Context, req resource.CreateRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	setPCapNGSystemFields(&data)
 
 	validatePCapNGModel(&resp.Diagnostics, data)
 	if resp.Diagnostics.HasError() {
@@ -227,6 +229,7 @@ func (r *AppPCapNG) Update(ctx context.Context, req resource.UpdateRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	setPCapNGSystemFields(&planData)
 
 	validatePCapNGModel(&resp.Diagnostics, planData)
 	if resp.Diagnostics.HasError() {
@@ -287,7 +290,7 @@ func (r *AppPCapNG) Delete(ctx context.Context, req resource.DeleteRequest, resp
 			Operation:  "delete",
 			Application: map[string]interface{}{
 				"id":       rawID,
-				"name":     "pcapng",
+				"name":     pcapNGAppName,
 				"app_type": "PCapNG",
 			},
 		}},
@@ -332,7 +335,7 @@ func buildFMPCapNGPayload(model AppPCapNGModel) map[string]interface{} {
 	}
 
 	payload := map[string]interface{}{
-		"name":    "pcapng",
+		"name":    pcapNGAppName,
 		"alias":   model.Alias.ValueString(),
 		"appMode": appMode,
 	}
@@ -356,7 +359,7 @@ func mapFMPCapNGToState(fmData FMPCapNG, sessionID string, typedID string) AppPC
 		Id:                   types.StringValue(typedID),
 		MonitoringSessionId:  types.StringValue(sessionID),
 		Alias:                types.StringNull(),
-		Name:                 types.StringNull(),
+		Name:                 types.StringValue(pcapNGAppName),
 		AppMode:              types.StringValue("secondary"),
 		DomainClassification: types.BoolValue(false),
 		DomainTableAlias:     types.StringNull(),
@@ -365,9 +368,6 @@ func mapFMPCapNGToState(fmData FMPCapNG, sessionID string, typedID string) AppPC
 
 	if fmData.Alias != "" {
 		model.Alias = types.StringValue(fmData.Alias)
-	}
-	if fmData.Name != "" {
-		model.Name = types.StringValue(fmData.Name)
 	}
 	if fmData.AppMode != "" {
 		model.AppMode = types.StringValue(fmData.AppMode)
@@ -385,9 +385,6 @@ func mapFMPCapNGToState(fmData FMPCapNG, sessionID string, typedID string) AppPC
 	if fmData.AppConfig != nil {
 		if alias, ok := fmData.AppConfig["alias"].(string); ok {
 			model.Alias = types.StringValue(alias)
-		}
-		if name, ok := fmData.AppConfig["name"].(string); ok {
-			model.Name = types.StringValue(name)
 		}
 		if appMode, ok := fmData.AppConfig["appMode"].(string); ok {
 			model.AppMode = types.StringValue(appMode)
@@ -409,6 +406,10 @@ func mapFMPCapNGToState(fmData FMPCapNG, sessionID string, typedID string) AppPC
 	}
 
 	return model
+}
+
+func setPCapNGSystemFields(model *AppPCapNGModel) {
+	model.Name = types.StringValue(pcapNGAppName)
 }
 
 func validatePCapNGModel(diags *diag.Diagnostics, model AppPCapNGModel) {

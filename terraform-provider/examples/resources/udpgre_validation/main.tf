@@ -1,6 +1,4 @@
-# Copyright (c) HashiCorp, Inc.
-
-# Minimal typed PCapNG example.
+# UDPGRE tunnel validation example.
 # This example uses an existing monitoring session that is imported.
 
 terraform {
@@ -18,17 +16,19 @@ provider "gigamon" {
 }
 
 locals {
-  monitoring_session_id = "monitoringSession::vmware::e9e844c4-aba0-4361-bd3d-9ad78a98ba94"
+  monitoring_session_id = "monitoringSession::vmware::cc05cec7-2933-411a-a846-1566b65d7c98"
 }
 
-
-resource "gigamon_app_pcapng" "minimal" {
+resource "gigamon_tunnel_in" "udpgre_validation" {
   monitoring_session_id = local.monitoring_session_id
+  alias                 = "udpgre-min"
+  description           = "UDPGRE ingress tunnel validation example"
+  ip_version            = "IPV6"
+  remote_ip             = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
 
-  alias = "pcapng_p1"
-
-  app_mode              = "primary"
-  domain_classification = true
-  domain_table_alias    = "pcap"
-  flow_timeout          = 1860
+  udpgre {
+    key              = 0
+    source_port      = 5001
+    destination_port = 4754
+  }
 }
