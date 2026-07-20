@@ -11,6 +11,7 @@ import (
 	"net"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -18,7 +19,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int32planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -57,9 +60,11 @@ type L2GreConfig struct {
 	Key types.Int32 `tfsdk:"key"` // GRE key
 }
 
-// type UdpGreConfig struct {
-// 	Key types.Int32 `tfsdk:"key"` // GRE key over UDP
-// }
+type UdpGreConfig struct {
+	Key             types.Int64 `tfsdk:"key"` // GRE key over UDP
+	SourcePort      types.Int32 `tfsdk:"source_port"`
+	DestinationPort types.Int32 `tfsdk:"destination_port"`
+}
 
 type VxlanConfig struct {
 	Vni             types.Int32 `tfsdk:"vni"` // VXLAN Network Identifier
@@ -135,11 +140,12 @@ type TunnelInModel struct {
 
 	// Common fields for ingress tunnels
 	Description types.String `tfsdk:"description"`
+	IpVersion   types.String `tfsdk:"ip_version"`
 	RemoteIP    types.String `tfsdk:"remote_ip"` // peer IP if applicable
 
 	// Type-specific blocks
-	L2Gre *L2GreConfig `tfsdk:"l2gre"`
-	// UdpGre    *UdpGreConfig    `tfsdk:"udpgre"`
+	L2Gre     *L2GreConfig     `tfsdk:"l2gre"`
+	UdpGre    *UdpGreConfig    `tfsdk:"udpgre"`
 	Vxlan     *VxlanConfig     `tfsdk:"vxlan"`
 	Geneve    *GeneveConfig    `tfsdk:"geneve"`
 	Erspan    *ErspanConfig    `tfsdk:"erspan"`
@@ -164,7 +170,7 @@ type FMTunnel struct {
 	FlowLabel int32  `json:"flowLabel,omitempty"`
 
 	// Type-specific (non-TLS)
-	Key     int32 `json:"key,omitempty"`   // L2GRE/UDPGRE key
+	Key     int64 `json:"key,omitempty"`   // L2GRE/UDPGRE key
 	Vni     int32 `json:"vni,omitempty"`   // VXLAN / Geneve VNI
 	SPort   int32 `json:"sport,omitempty"` // source L4 port
 	DPort   int32 `json:"dport,omitempty"` // dest L4 port
@@ -211,20 +217,38 @@ func l2GreBlock() schema.SingleNestedBlock {
 	}
 }
 
-// func udpGreBlock() schema.SingleNestedBlock {
-// 	return schema.SingleNestedBlock{
-// 		MarkdownDescription: "UDPGRE tunnel parameters.",
-// 		Attributes: map[string]schema.Attribute{
-// 			"key": schema.Int32Attribute{
-// 				MarkdownDescription: "UDPGRE key (1–4294967295).",
-// 				Optional:            true,
-// 				Validators: []validator.Int32{
-// 					int32validator.AtLeast(1),
-// 				},
-// 			},
-// 		},
-// 	}
-// }
+func udpGreBlock() schema.SingleNestedBlock {
+	return schema.SingleNestedBlock{
+		MarkdownDescription: "UDPGRE tunnel parameters.",
+		Attributes: map[string]schema.Attribute{
+			"key": schema.Int64Attribute{
+				MarkdownDescription: "UDPGRE key (0–4294967295).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+				Validators: []validator.Int64{
+					int64validator.Between(0, 4294967295),
+				},
+			},
+			"source_port": schema.Int32Attribute{
+				MarkdownDescription: "Source UDP port for this UDPGRE tunnel (1–65535).",
+				Optional:            true,
+				Validators: []validator.Int32{
+					int32validator.Between(1, 65535),
+				},
+			},
+			"destination_port": schema.Int32Attribute{
+				MarkdownDescription: "Destination UDP port for this UDPGRE tunnel (4754 or 4755).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(4754),
+				Validators: []validator.Int32{
+					int32validator.OneOf(4754, 4755),
+				},
+			},
+		},
+	}
+}
 
 func vxlanBlock() schema.SingleNestedBlock {
 	return schema.SingleNestedBlock{
@@ -570,6 +594,16 @@ func (r *tunnelInResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional:            true,
 			},
 
+			"ip_version": schema.StringAttribute{
+				MarkdownDescription: "IP version for this ingress tunnel remote address (IPV4 or IPV6). Used for UDPGRE validation.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("IPV4"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("IPV4", "IPV6"),
+				},
+			},
+
 			"remote_ip": schema.StringAttribute{
 				MarkdownDescription: "Remote peer IP address for this ingress tunnel.",
 				Optional:            true,
@@ -588,8 +622,8 @@ func (r *tunnelInResource) Schema(ctx context.Context, req resource.SchemaReques
 		},
 
 		Blocks: map[string]schema.Block{
-			"l2gre": l2GreBlock(),
-			// "udpgre":     udpGreBlock(),
+			"l2gre":      l2GreBlock(),
+			"udpgre":     udpGreBlock(),
 			"vxlan":      vxlanBlock(),
 			"geneve":     geneveBlock(),
 			"erspan":     erspanBlock(),
@@ -616,12 +650,13 @@ func (r *tunnelInResource) ConfigValidators(ctx context.Context) []resource.Conf
 	return []resource.ConfigValidator{
 		resourcevalidator.ExactlyOneOf(
 			path.MatchRoot("l2gre"),
-			// path.MatchRoot("udpgre"),
+			path.MatchRoot("udpgre"),
 			path.MatchRoot("vxlan"),
 			path.MatchRoot("geneve"),
 			path.MatchRoot("erspan"),
 			path.MatchRoot("tls_pcapng"),
 		),
+		udpGreTunnelInValidator{},
 	}
 }
 
@@ -671,7 +706,7 @@ func (r *tunnelInResource) Configure(
 
 func inferTunnelTypeFromBlocks(
 	l2 *L2GreConfig,
-	// ug *UdpGreConfig,
+	ug *UdpGreConfig,
 	vx *VxlanConfig,
 	ge *GeneveConfig,
 	er *ErspanConfig,
@@ -681,8 +716,8 @@ func inferTunnelTypeFromBlocks(
 	switch {
 	case l2 != nil:
 		return "l2gre"
-	// case ug != nil:
-	// 	return "udpgre"
+	case ug != nil:
+		return "udpgre"
 	case vx != nil:
 		return "vxlan"
 	case ge != nil:
@@ -744,6 +779,8 @@ func (v ipLiteralValidator) ValidateString(
 // tlsKeyAliasOutValidator forbids tls_key_alias on TLS-PCAPNG egress tunnels.
 type tlsKeyAliasOutValidator struct{}
 
+type udpGreTunnelInValidator struct{}
+
 func (v tlsKeyAliasOutValidator) Description(ctx context.Context) string {
 	return "tls_key_alias is not supported on TLS-PCAPNG egress tunnels"
 }
@@ -778,12 +815,84 @@ func (v tlsKeyAliasOutValidator) ValidateResource(
 	}
 }
 
+func (v udpGreTunnelInValidator) Description(ctx context.Context) string {
+	return "validates UDPGRE-specific ingress tunnel constraints"
+}
+
+func (v udpGreTunnelInValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v udpGreTunnelInValidator) ValidateResource(
+	ctx context.Context,
+	req resource.ValidateConfigRequest,
+	resp *resource.ValidateConfigResponse,
+) {
+	var data TunnelInModel
+
+	diags := req.Config.Get(ctx, &data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.UdpGre == nil {
+		if !data.IpVersion.IsNull() && !data.IpVersion.IsUnknown() && data.IpVersion.ValueString() != "IPV4" {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("ip_version"),
+				"ip_version only applies to UDPGRE tunnels",
+				"ip_version can only be configured when the udpgre block is used.",
+			)
+		}
+		return
+	}
+
+	if !data.TrafficDirection.IsNull() && !data.TrafficDirection.IsUnknown() && data.TrafficDirection.ValueString() != "in" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("traffic_direction"),
+			"Invalid traffic_direction",
+			"UDPGRE tunnels are only supported on gigamon_tunnel_in with traffic_direction set to in.",
+		)
+	}
+
+	ipVersion := "IPV4"
+	if !data.IpVersion.IsNull() && !data.IpVersion.IsUnknown() && data.IpVersion.ValueString() != "" {
+		ipVersion = data.IpVersion.ValueString()
+	}
+
+	if data.RemoteIP.IsNull() || data.RemoteIP.IsUnknown() {
+		return
+	}
+
+	ip := net.ParseIP(data.RemoteIP.ValueString())
+	if ip == nil {
+		return
+	}
+
+	if ipVersion == "IPV4" && ip.To4() == nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("remote_ip"),
+			"remote_ip does not match ip_version",
+			fmt.Sprintf("remote_ip %q is not a valid IPV4 literal", data.RemoteIP.ValueString()),
+		)
+	}
+
+	if ipVersion == "IPV6" && ip.To4() != nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("remote_ip"),
+			"remote_ip does not match ip_version",
+			fmt.Sprintf("remote_ip %q is not a valid IPV6 literal", data.RemoteIP.ValueString()),
+		)
+	}
+}
+
 // ---------------------- FMTunnel builders --------------
 
 // Map OUT model to FM
 func createFMTunnelFromOut(data *TunnelOutModel) *FMTunnel {
 	t := inferTunnelTypeFromBlocks(
 		data.L2Gre,
+		nil,
 		data.Vxlan,
 		nil,
 		nil,
@@ -816,7 +925,7 @@ func createFMTunnelFromOut(data *TunnelOutModel) *FMTunnel {
 	switch t {
 	case "l2gre":
 		if data.L2Gre != nil {
-			fm.Key = data.L2Gre.Key.ValueInt32()
+			fm.Key = int64(data.L2Gre.Key.ValueInt32())
 		}
 
 	case "vxlan":
@@ -859,7 +968,7 @@ func createFMTunnelFromOut(data *TunnelOutModel) *FMTunnel {
 func createFMTunnelFromIn(data *TunnelInModel) *FMTunnel {
 	t := inferTunnelTypeFromBlocks(
 		data.L2Gre,
-		// data.UdpGre,
+		data.UdpGre,
 		data.Vxlan,
 		data.Geneve,
 		data.Erspan,
@@ -877,25 +986,36 @@ func createFMTunnelFromIn(data *TunnelInModel) *FMTunnel {
 		Description:      data.Description.ValueString(),
 		Type:             t,
 		TrafficDirection: "in",
+		IpVersion:        "IPV4",
 		AdminState:       "enabled",
+	}
+
+	if !data.IpVersion.IsNull() && !data.IpVersion.IsUnknown() && data.IpVersion.ValueString() != "" {
+		fm.IpVersion = data.IpVersion.ValueString()
 	}
 
 	if !data.RemoteIP.IsNull() && !data.RemoteIP.IsUnknown() {
 		remoteIP := data.RemoteIP.ValueString()
 		fm.RemoteIP = remoteIP
-		fm.IpVersion = inferIpVersionFromRemoteIP(remoteIP)
+		if data.UdpGre == nil {
+			fm.IpVersion = inferIpVersionFromRemoteIP(remoteIP)
+		}
 	}
 
 	switch t {
 	case "l2gre":
 		if data.L2Gre != nil {
-			fm.Key = data.L2Gre.Key.ValueInt32()
+			fm.Key = int64(data.L2Gre.Key.ValueInt32())
 		}
 
-	// case "udpgre":
-	// 	if data.UdpGre != nil {
-	// 		fm.Key = data.UdpGre.Key.ValueInt32()
-	// 	}
+	case "udpgre":
+		if data.UdpGre != nil {
+			fm.Key = data.UdpGre.Key.ValueInt64()
+			if !data.UdpGre.SourcePort.IsNull() && !data.UdpGre.SourcePort.IsUnknown() {
+				fm.SPort = data.UdpGre.SourcePort.ValueInt32()
+			}
+			fm.DPort = data.UdpGre.DestinationPort.ValueInt32()
+		}
 
 	case "vxlan":
 		if data.Vxlan != nil {
@@ -960,7 +1080,7 @@ func updateOutTFStruct(data *TunnelOutModel, fmData *FMTunnel) {
 	case "l2gre":
 		if hadL2Gre || fmData.Key != 0 {
 			data.L2Gre = &L2GreConfig{
-				Key: types.Int32Value(fmData.Key),
+				Key: types.Int32Value(int32(fmData.Key)),
 			}
 		}
 
@@ -1002,7 +1122,7 @@ func updateOutTFStruct(data *TunnelOutModel, fmData *FMTunnel) {
 // updateInTFStruct copies FM tunnel data into the IN TF state model.
 func updateInTFStruct(data *TunnelInModel, fmData *FMTunnel) {
 	hadL2Gre := data.L2Gre != nil
-	// hadUdpGre := data.UdpGre != nil
+	hadUdpGre := data.UdpGre != nil
 	hadVxlan := data.Vxlan != nil
 	hadGeneve := data.Geneve != nil
 	hadErspan := data.Erspan != nil
@@ -1021,8 +1141,14 @@ func updateInTFStruct(data *TunnelInModel, fmData *FMTunnel) {
 		data.RemoteIP = types.StringValue(fmData.RemoteIP)
 	}
 
+	if fmData.IpVersion != "" {
+		data.IpVersion = types.StringValue(fmData.IpVersion)
+	} else {
+		data.IpVersion = types.StringValue("IPV4")
+	}
+
 	data.L2Gre = nil
-	// data.UdpGre = nil
+	data.UdpGre = nil
 	data.Vxlan = nil
 	data.Geneve = nil
 	data.Erspan = nil
@@ -1032,16 +1158,24 @@ func updateInTFStruct(data *TunnelInModel, fmData *FMTunnel) {
 	case "l2gre":
 		if hadL2Gre || fmData.Key != 0 {
 			data.L2Gre = &L2GreConfig{
-				Key: types.Int32Value(fmData.Key),
+				Key: types.Int32Value(int32(fmData.Key)),
 			}
 		}
 
-	// case "udpgre":
-	// 	if hadUdpGre || fmData.Key != 0 {
-	// 		data.UdpGre = &UdpGreConfig{
-	// 			Key: types.Int32Value(fmData.Key),
-	// 		}
-	// 	}
+	case "udpgre":
+		if hadUdpGre || fmData.Key != 0 || fmData.SPort != 0 || fmData.DPort != 0 {
+			cfg := &UdpGreConfig{
+				Key:             types.Int64Value(fmData.Key),
+				DestinationPort: types.Int32Value(4754),
+			}
+			if fmData.SPort != 0 {
+				cfg.SourcePort = types.Int32Value(fmData.SPort)
+			}
+			if fmData.DPort != 0 {
+				cfg.DestinationPort = types.Int32Value(fmData.DPort)
+			}
+			data.UdpGre = cfg
+		}
 
 	case "vxlan":
 		if hadVxlan || fmData.Vni != 0 || fmData.DPort != 0 {

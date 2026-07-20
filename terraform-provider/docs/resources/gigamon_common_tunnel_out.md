@@ -13,7 +13,7 @@ Supported tunnel types for `gigamon_tunnel_out`:
 - `tlspcapng` (TLS-PCAPNG, configured via `tls_pcapng` block)
 - `udp` (with AMI constraint; see below)
 
-> `udpgre` (GRE over UDP) is **not supported**: it requires a PCAPNG application that is not in scope
+> `udpgre` (GRE over UDP) is supported: it requires a PCAPNG application that is not in scope
 
 ---
 
