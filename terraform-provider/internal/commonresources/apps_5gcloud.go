@@ -91,7 +91,6 @@ type App5GCloudModel struct {
 	LogFolderLoc        types.String `tfsdk:"log_folder_loc"`
 	TunnelLogLevel      types.Int64  `tfsdk:"tunnel_log_level"`
 	Alias               types.String `tfsdk:"alias"`
-	Name                types.String `tfsdk:"name"`
 }
 
 type RxTunnelModel struct {
@@ -506,14 +505,6 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					stringvalidator.RegexMatches(app5GCloudNameRegex, "only alphanumeric, '.', '-' and '_' are allowed"),
 				},
 			},
-			"name": schema.StringAttribute{
-				Description: "Name for the 5G Cloud application.",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.LengthBetween(1, 256),
-					stringvalidator.RegexMatches(app5GCloudNameRegex, "only alphanumeric, '.', '-' and '_' are allowed"),
-				},
-			},
 		},
 	}
 }
@@ -540,7 +531,6 @@ func (r *App5GCloud) Configure(ctx context.Context, req resource.ConfigureReques
 func (r *App5GCloud) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	tflog.Info(ctx, "Creating 5G Cloud app resource")
 
-	// Extract the resolved plan so computed defaults are available.
 	var data App5GCloudModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
@@ -762,7 +752,7 @@ func (r *App5GCloud) ImportState(ctx context.Context, req resource.ImportStateRe
 	}
 
 	fmData := FM5GCloud{}
-	err = GetMSAppData(ctx, sessionID, rawID, "5GCloud", "", &fmData, r.fmClient)
+	err = GetMSAppData(ctx, sessionID, rawID, app5GCloudTypeID, "", &fmData, r.fmClient)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error importing 5G Cloud app",
@@ -786,7 +776,6 @@ func buildFM5GCloudPayload(ctx context.Context, model App5GCloudModel) map[strin
 
 	setStringConfigValue(appConfig, "mode", model.Mode)
 	setStringConfigValue(appConfig, "alias", model.Alias)
-	setStringConfigValue(appConfig, "name", model.Name)
 	setInt64ConfigValue(appConfig, "toolMtu", model.ToolMtu)
 	setStringConfigValue(appConfig, "logFolderLoc", model.LogFolderLoc)
 	setInt64ConfigValue(appConfig, "tunnelLogLevel", model.TunnelLogLevel)
@@ -949,7 +938,6 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 		LogFolderLoc:        types.StringValue("/var/log"),
 		TunnelLogLevel:      types.Int64Value(2),
 		Alias:               types.StringNull(),
-		Name:                types.StringNull(),
 	}
 
 	if base != nil {
@@ -962,7 +950,6 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 		model.LogFolderLoc = base.LogFolderLoc
 		model.TunnelLogLevel = base.TunnelLogLevel
 		model.Alias = base.Alias
-		model.Name = base.Name
 	}
 
 	cfg := fmData.AppConfig
@@ -975,9 +962,6 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 	}
 	if _, ok := cfg["alias"]; !ok && fmData.Alias != "" {
 		cfg["alias"] = fmData.Alias
-	}
-	if _, ok := cfg["name"]; !ok && fmData.Name != "" {
-		cfg["name"] = fmData.Name
 	}
 	if _, ok := cfg["toolMtu"]; !ok && fmData.ToolMtu != nil {
 		cfg["toolMtu"] = fmData.ToolMtu
@@ -1009,12 +993,6 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 	}
 	if model.Alias.IsNull() && fmData.Alias != "" {
 		model.Alias = types.StringValue(fmData.Alias)
-	}
-	if name, ok := cfg["name"].(string); ok {
-		model.Name = types.StringValue(name)
-	}
-	if model.Name.IsNull() && fmData.Name != "" {
-		model.Name = types.StringValue(fmData.Name)
 	}
 	if toolMtu, ok := cfg["toolMtu"]; ok {
 		model.ToolMtu = toInt64Value(toolMtu)
