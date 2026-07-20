@@ -12,23 +12,23 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.83.81"
+  fm_address  = "10.114.83.72"
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiOTM1NjY5MDkzMzk1NjY4MCIsInN1YiI6IlRva2VuIiwiaWF0IjoxNzgyOTg0NTM4LCJleHAiOjE3ODU1NzY1Mzh9.iLDu2HXSVEzIJIrfTG6179Y8k8DBAf1dOSfYd_gbj7s"
+  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzE3MzIwMDQwNDI4NzQyMyIsInN1YiI6IlRva2VuMSIsImlhdCI6MTc4NDAwNzc5NCwiZXhwIjoxNzg2NTk5Nzk0fQ.Z2hHcfSdCYmQGW5ZjoF6lU9ms7-aehyHLFao3JyOJow"
 }
 
 locals {
-  monitoring_session_id = "monitoringSession::vmware::f3781595-4ea8-45d8-a788-a8bd240a56b6"
+  monitoring_session_id = "monitoringSession::vmware::ddcd0b1a-c5fc-448b-ab58-4d1874287a18"
 }
 
 resource "gigamon_app_5gsbi" "sbi5g" {
   monitoring_session_id = local.monitoring_session_id
 
   alias = "sbi5gAppTemplate"
-  name  = "sbi5g"
+  #name  = "sbi5g"
   type  = "ericssonVTap"
 
-  ip_mapping_alias                      = "nfinstance"
+  ip_mapping_alias                      = "sbi-nfinstance"
   http2_synthesize_tool_mtu_packet_size = 0
   # http2_synthesize_indexed_headers      = true
   # http2_synthesize_compressed_headers   = true

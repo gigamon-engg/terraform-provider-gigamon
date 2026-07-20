@@ -82,5 +82,5 @@ resource "gigamon_app_5gcloud" "minimal" {
   log_folder_loc   = "/var/log"
   tunnel_log_level = 2
   alias            = "cloud5g"
-  name             = "cloud5g"
+  #name             = "cloud5g"
 }

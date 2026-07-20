@@ -32,6 +32,8 @@ import (
 
 var appNameAliasRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+const app5GSBIName = "sbi5g"
+
 // Ensure provider defined types fully satisfy framework interfaces
 var _ resource.Resource = &App5GSBI{}
 var _ resource.ResourceWithConfigure = &App5GSBI{}
@@ -54,19 +56,19 @@ type App5GSBIModel struct {
     MonitoringSessionId types.String `tfsdk:"monitoring_session_id"`
 
     // FM API direct fields
-    Alias                            types.String `tfsdk:"alias"`
-    Name                             types.String `tfsdk:"name"`
-    Type                             types.String `tfsdk:"type"`
-    IpMappingAlias                   types.String `tfsdk:"ip_mapping_alias"`
-    Http2SynthesizeToolMtuPacketSize types.Int64  `tfsdk:"http2_synthesize_tool_mtu_packet_size"`
-    Http2SynthesizeIndexedHeaders    types.Bool   `tfsdk:"http2_synthesize_indexed_headers"`
-    Http2SynthesizeCompressedHeaders types.Bool   `tfsdk:"http2_synthesize_compressed_headers"`
-    TransactionLog                   types.Bool   `tfsdk:"transaction_log"`
-    TransactionLogFileInterval       types.Int64  `tfsdk:"transaction_log_file_interval"`
-    LogFolderSize                    types.Int64  `tfsdk:"log_folder_size"`
-    StatsLog                         types.Bool   `tfsdk:"stats_log"`
-    LogFolderLoc                     types.String `tfsdk:"log_folder_loc"`
-    EricssonVTapConfig               types.Object `tfsdk:"ericsson_vtap_config"`
+    Alias                                types.String `tfsdk:"alias"`
+    Name                                 types.String `tfsdk:"name"`
+    Type                                 types.String `tfsdk:"type"`
+    IpMappingAlias                       types.String `tfsdk:"ip_mapping_alias"`
+    Http2SynthesizeToolMtuPacketSize     types.Int64  `tfsdk:"http2_synthesize_tool_mtu_packet_size"`
+    Http2SynthesizeIndexedHeaders        types.Bool   `tfsdk:"http2_synthesize_indexed_headers"`
+    Http2SynthesizeCompressedHeaders     types.Bool   `tfsdk:"http2_synthesize_compressed_headers"`
+    TransactionLog                       types.Bool   `tfsdk:"transaction_log"`
+    TransactionLogFileInterval           types.Int64  `tfsdk:"transaction_log_file_interval"`
+    LogFolderSize                        types.Int64  `tfsdk:"log_folder_size"`
+    StatsLog                             types.Bool   `tfsdk:"stats_log"`
+    LogFolderLoc                         types.String `tfsdk:"log_folder_loc"`
+    EricssonVTapConfig                   types.Object `tfsdk:"ericsson_vtap_config"`
 }
 
 // EricssonVTapConfigModel represents the ericsson_vtap_config nested block
@@ -149,12 +151,8 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
                 },
             },
             "name": schema.StringAttribute{
-                Description: "Display name for the 5G-SBI application",
-                Required:    true,
-                Validators: []validator.String{
-                    stringvalidator.LengthAtLeast(1),
-                    stringvalidator.RegexMatches(appNameAliasRegex, "only alphanumeric, '-' and '_' are allowed"),
-                },
+                Description: "Internal app name for the 5G-SBI application",
+                Computed:    true,
             },
             "type": schema.StringAttribute{
                 Description: "Application type variant",
@@ -372,6 +370,8 @@ func (r *App5GSBI) Create(ctx context.Context, req resource.CreateRequest, resp 
     }
 
     data.Id = types.StringValue(typedID)
+    data.Name = types.StringValue(app5GSBIName)
+
     resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -411,6 +411,8 @@ func (r *App5GSBI) Read(ctx context.Context, req resource.ReadRequest, resp *res
     }
 
     data = mapFM5GSBIToState(ctx, fmData, sessionID, typedID)
+    data.Name = types.StringValue(app5GSBIName)
+
     resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -463,6 +465,8 @@ func (r *App5GSBI) Update(ctx context.Context, req resource.UpdateRequest, resp 
     } else {
         planData = mapFM5GSBIToState(ctx, fmData, sessionID, typedID)
     }
+
+    planData.Name = types.StringValue(app5GSBIName)
 
     resp.Diagnostics.Append(resp.State.Set(ctx, &planData)...)
 }
@@ -540,6 +544,8 @@ func (r *App5GSBI) ImportState(ctx context.Context, req resource.ImportStateRequ
     }
 
     data := mapFM5GSBIToState(ctx, fmData, sessionID, typedID)
+    data.Name = types.StringValue(app5GSBIName)
+
     resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -566,7 +572,7 @@ func buildFM5GSBIPayload(ctx context.Context, model App5GSBIModel) map[string]in
     payload := map[string]interface{}{}
 
     setStringFromConfig(payload, "alias", model.Alias)
-    setStringFromConfig(payload, "name", model.Name)
+    payload["name"] = app5GSBIName
     setStringFromConfig(payload, "type", model.Type)
     setStringFromConfig(payload, "ipMappingAlias", model.IpMappingAlias)
     setInt64FromConfig(payload, "http2SynthesizeToolMtuPacketSize", model.Http2SynthesizeToolMtuPacketSize)
@@ -654,38 +660,38 @@ func readInt64Default(cfg map[string]interface{}, key string, def int64) types.I
 // mapFM5GSBIToState converts FM API response to Terraform model
 func mapFM5GSBIToState(ctx context.Context, fmData FM5GSBI, sessionID string, typedID string) App5GSBIModel {
     model := App5GSBIModel{
-        Id:                               types.StringValue(typedID),
-        MonitoringSessionId:              types.StringValue(sessionID),
-        Alias:                            types.StringNull(),
-        Name:                             types.StringNull(),
-        Type:                             types.StringNull(),
-        IpMappingAlias:                   types.StringNull(),
-        Http2SynthesizeToolMtuPacketSize: types.Int64Null(),
-        Http2SynthesizeIndexedHeaders:    types.BoolNull(),
-        Http2SynthesizeCompressedHeaders: types.BoolNull(),
-        TransactionLog:                   types.BoolNull(),
-        TransactionLogFileInterval:       types.Int64Null(),
-        LogFolderSize:                    types.Int64Null(),
-        StatsLog:                         types.BoolNull(),
-        LogFolderLoc:                     types.StringNull(),
-        EricssonVTapConfig:               types.ObjectNull(ericssonVTapConfigAttrTypes),
+        Id:                                  types.StringValue(typedID),
+        MonitoringSessionId:                 types.StringValue(sessionID),
+        Alias:                               types.StringNull(),
+        Name:                                types.StringValue(app5GSBIName),
+        Type:                                types.StringNull(),
+        IpMappingAlias:                      types.StringNull(),
+        Http2SynthesizeToolMtuPacketSize:    types.Int64Null(),
+        Http2SynthesizeIndexedHeaders:       types.BoolNull(),
+        Http2SynthesizeCompressedHeaders:    types.BoolNull(),
+        TransactionLog:                      types.BoolNull(),
+        TransactionLogFileInterval:          types.Int64Null(),
+        LogFolderSize:                       types.Int64Null(),
+        StatsLog:                            types.BoolNull(),
+        LogFolderLoc:                        types.StringNull(),
+        EricssonVTapConfig:                  types.ObjectNull(ericssonVTapConfigAttrTypes),
     }
 
     cfg := fmData.AppConfig
     if cfg == nil {
         cfg = map[string]interface{}{
-            "alias":                           fmData.Alias,
-            "name":                            fmData.Name,
-            "type":                            fmData.Type,
-            "ipMappingAlias":                  fmData.IpMappingAlias,
+            "alias":                            fmData.Alias,
+            "name":                             app5GSBIName,
+            "type":                             fmData.Type,
+            "ipMappingAlias":                   fmData.IpMappingAlias,
             "http2SynthesizeToolMtuPacketSize": fmData.Http2SynthesizeToolMtuPacketSize,
-            "http2SynthesizeIndexedHeaders":   fmData.Http2SynthesizeIndexedHeaders,
+            "http2SynthesizeIndexedHeaders":    fmData.Http2SynthesizeIndexedHeaders,
             "http2SynthesizeCompressedHeaders": fmData.Http2SynthesizeCompressedHeaders,
-            "transactionLog":                  fmData.TransactionLog,
-            "transactionLogFileInterval":      fmData.TransactionLogFileInterval,
-            "logFolderSize":                   fmData.LogFolderSize,
-            "statsLog":                        fmData.StatsLog,
-            "logFolderLoc":                    fmData.LogFolderLoc,
+            "transactionLog":                   fmData.TransactionLog,
+            "transactionLogFileInterval":       fmData.TransactionLogFileInterval,
+            "logFolderSize":                    fmData.LogFolderSize,
+            "statsLog":                         fmData.StatsLog,
+            "logFolderLoc":                     fmData.LogFolderLoc,
         }
         if fmData.EricssonVTapConfig != nil {
             cfg["ericssonVTapConfig"] = fmData.EricssonVTapConfig
@@ -693,7 +699,7 @@ func mapFM5GSBIToState(ctx context.Context, fmData FM5GSBI, sessionID string, ty
     }
 
     model.Alias = readString(cfg, "alias")
-    model.Name = readString(cfg, "name")
+    model.Name = types.StringValue(app5GSBIName)
     model.Type = readString(cfg, "type")
     model.IpMappingAlias = readString(cfg, "ipMappingAlias")
     model.Http2SynthesizeToolMtuPacketSize = readInt64(cfg, "http2SynthesizeToolMtuPacketSize")
