@@ -25,15 +25,16 @@ locals {
 
 resource "gigamon_app_5gcloud" "minimal" {
   monitoring_session_id = local.monitoring_session_id
-
   mode = "nokiaHEP3Inbound"
 
-  rx_tunnel = [{
-    rx_type          = "tcp"
-    listen_ipaddress = "1.1.1.1"
-    listen_port      = 1
-    from_port = 1
-  }]
+  rx_tunnel = [
+    {
+      rx_type          = "tcp"
+      listen_ipaddress = "1.1.1.1"
+      listen_port      = 1
+      from_port        = 1
+    }
+  ]
 
   tx_tunnel = {
     tx_type             = "vxlan"
@@ -53,34 +54,38 @@ resource "gigamon_app_5gcloud" "minimal" {
     header_compression_code             = false
     nrf_discovery_enabled               = true
     add_gigamon_header                  = false
-    nf_instance_alias                   = "5gc-fn"
     fqdn_alias                          = "5gc-fqdn"
-    ua_alias                            = "5gc-ua"
     min_tcp_flow_client_port            = 32768
     max_tcp_flow_client_port            = 36863
     packet_capture_log_level            = "none"
     csv_logging_log_level               = "none"
     num_scp_processing_threads          = 8
     num_tcp_flow_client_port_per_thread = 1000
+    tcp_server_ports                    = 1
+
   }
 
   hep3_config = {
-    num_ingress_tcp_conn     = 1024
-    num_egress_tcp_flows     = 4096
-    egress_tcp_flow_timeout  = 900
-    num_receive_thread       = 8
-    mtls                     = "enable"
-    hep3_timestamp           = false
-    recv_timestamp           = false
-    mtls_key_alias           = "evpKey"
-    num_egress_sctp_flows    = 1024
-    egress_sctp_flow_timeout = 900
-    service_map_table_alias  = "5g-servicemap"
+    num_ingress_tcpconn        = 1024
+    num_egress_tcp_flows       = 4096
+    egress_tcp_flow_timeout    = 900
+    num_receive_thread         = 8
+    mtls                       = "disable"
+    hep3_timestamp             = false
+    recv_timestamp             = false
+    mtls_key_alias             = ""
+    num_egress_sctp_flows      = 1024
+    egress_sctp_flow_timeout   = 900
+    service_map_table_alias    = "5g-servicemap"
   }
 
   tool_mtu         = 8800
   log_folder_loc   = "/var/log"
   tunnel_log_level = 2
   alias            = "cloud5g"
-  #name             = "cloud5g"
+
+
+
 }
+
+

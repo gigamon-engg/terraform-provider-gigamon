@@ -141,6 +141,7 @@ type ScpConfigModel struct {
 	CsvLoggingLogLevel               types.String `tfsdk:"csv_logging_log_level"`
 	NumSCPProcessingThreads          types.Int64  `tfsdk:"num_scp_processing_threads"`
 	NumTCPFlowClientPortPerThread    types.Int64  `tfsdk:"num_tcp_flow_client_port_per_thread"`
+	TcpServerPorts                   types.Int64  `tfsdk:"tcp_server_ports"`
 	NokiaInboundUse3gppTargetApiRoot types.Bool   `tfsdk:"nokia_inbound_use_3gpp_target_api_root"`
 	NokiaInboundReplaceAuthority     types.Bool   `tfsdk:"nokia_inbound_replace_authority"`
 	Http2MonitoredFlows              types.Object `tfsdk:"http2_monitored_flows"`
@@ -212,6 +213,7 @@ var scpConfigAttrTypes = map[string]attr.Type{
 	"csv_logging_log_level":                  types.StringType,
 	"num_scp_processing_threads":             types.Int64Type,
 	"num_tcp_flow_client_port_per_thread":    types.Int64Type,
+	"tcp_server_ports":                       types.Int64Type,
 	"nokia_inbound_use_3gpp_target_api_root": types.BoolType,
 	"nokia_inbound_replace_authority":        types.BoolType,
 	"http2_monitored_flows":                  types.ObjectType{AttrTypes: http2MonitoredFlowsAttrTypes},
@@ -433,6 +435,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					"csv_logging_log_level":                  schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("all", "flow", "message", "transaction", "none")}},
 					"num_scp_processing_threads":             schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(8), Validators: []validator.Int64{int64validator.Between(1, 16)}},
 					"num_tcp_flow_client_port_per_thread":    schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(1000), Validators: []validator.Int64{int64validator.Between(100, 8000)}},
+					"tcp_server_ports":                      schema.Int64Attribute{Optional: true, Validators: []validator.Int64{int64validator.Between(1, 65535)}},
 					"nokia_inbound_use_3gpp_target_api_root": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
 					"nokia_inbound_replace_authority":        schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
 					"http2_monitored_flows": schema.SingleNestedAttribute{
@@ -475,6 +478,8 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 			"tool_mtu": schema.Int64Attribute{
 				Description: "Tool MTU.",
 				Optional:    true,
+				Computed:    true,
+				Default:     int64default.StaticInt64(8800),
 				Validators: []validator.Int64{
 					int64validator.Between(1400, 8800),
 				},
@@ -861,6 +866,7 @@ func buildFM5GCloudPayload(ctx context.Context, model App5GCloudModel) map[strin
 		setStringConfigValue(scpMap, "csvLoggingLogLevel", scp.CsvLoggingLogLevel)
 		setInt64ConfigValue(scpMap, "numSCPProcessingThreads", scp.NumSCPProcessingThreads)
 		setInt64ConfigValue(scpMap, "numTCPFlowCLientPortPerThread", scp.NumTCPFlowClientPortPerThread)
+		setInt64ConfigValue(scpMap, "tcpServerPorts", scp.TcpServerPorts)
 		setBoolConfigValue(scpMap, "nokiaInboundUse3gppTargetApiRoot", scp.NokiaInboundUse3gppTargetApiRoot)
 		setBoolConfigValue(scpMap, "nokiaInboundReplaceAuthority", scp.NokiaInboundReplaceAuthority)
 
@@ -1101,10 +1107,14 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 			CsvLoggingLogLevel:               types.StringValue("none"),
 			NumSCPProcessingThreads:          types.Int64Value(8),
 			NumTCPFlowClientPortPerThread:    types.Int64Value(1000),
+			TcpServerPorts:                   types.Int64Null(),
 			NokiaInboundUse3gppTargetApiRoot: types.BoolValue(false),
 			NokiaInboundReplaceAuthority:     types.BoolValue(false),
 			Http2MonitoredFlows:              types.ObjectNull(http2MonitoredFlowsAttrTypes),
 			TcpMonitoredFlows:                types.ObjectNull(tcpMonitoredFlowsAttrTypes),
+		}
+		if base != nil && !base.ScpConfig.IsNull() && !base.ScpConfig.IsUnknown() {
+			_ = base.ScpConfig.As(ctx, &scp, basetypes.ObjectAsOptions{})
 		}
 		if v, ok := rawScpConfig["numTCPFlows"]; ok {
 			scp.NumTCPFlows = toInt64Value(v)
@@ -1156,6 +1166,17 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 		}
 		if v, ok := rawScpConfig["numTCPFlowCLientPortPerThread"]; ok {
 			scp.NumTCPFlowClientPortPerThread = toInt64Value(v)
+		}
+		if v, ok := rawScpConfig["tcpServerPorts"]; ok {
+			mapped := toInt64Value(v)
+			if !mapped.IsNull() {
+				scp.TcpServerPorts = mapped
+			}
+		} else if v, ok := rawScpConfig["tcpServerPort"]; ok {
+			mapped := toInt64Value(v)
+			if !mapped.IsNull() {
+				scp.TcpServerPorts = mapped
+			}
 		}
 		if v, ok := rawScpConfig["nokiaInboundUse3gppTargetApiRoot"]; ok {
 			scp.NokiaInboundUse3gppTargetApiRoot = toBoolValue(v)
@@ -1292,12 +1313,15 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 			if ip := tunnel.ListenIpaddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
 				diags.AddError("Invalid rx_tunnel.listen_ipaddress", fmt.Sprintf("rx_tunnel[%d].listen_ipaddress must be a valid IPv4 or IPv6 address", idx))
 			}
+			if (mode == "nokiaHEP3Inbound" || mode == "nokiaHEP3IMS") && (tunnel.FromPort.IsNull() || tunnel.FromPort.IsUnknown()) {
+				diags.AddError("Missing rx_tunnel.from_port", fmt.Sprintf("rx_tunnel[%d].from_port is required when mode is %s", idx, mode))
+			}
 			if rxType == "tcp" {
 				if !tunnel.RxThread.IsNull() && !tunnel.RxThread.IsUnknown() {
 					diags.AddError("Invalid rx_tunnel.rx_thread", fmt.Sprintf("rx_tunnel[%d].rx_thread is not configurable when rx_type is tcp", idx))
 				}
 			} else if tunnel.FromPort.IsNull() || tunnel.FromPort.IsUnknown() {
-				diags.AddError("Missing rx_tunnel.from_port", fmt.Sprintf("rx_tunnel[%d].from_port is required when rx_type is %s", idx, rxType))
+				diags.AddError("Missing rx_tunnel.from_port", fmt.Sprintf("rx_tunnel[%d].from_port is required when mode is %s", idx, mode))
 			}
 			if mode == "casaVtap" && !tunnel.RxThread.IsNull() && !tunnel.RxThread.IsUnknown() && tunnel.RxThread.ValueInt64() != 1 {
 				diags.AddError("Invalid rx_tunnel.rx_thread", fmt.Sprintf("rx_tunnel[%d].rx_thread must be 1 when mode is casaVtap", idx))
@@ -1319,12 +1343,39 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 		if !stringInSlice(tx.TxType.ValueString(), allowedTxTypes) {
 			diags.AddError("Invalid tx_tunnel.tx_type", fmt.Sprintf("tx_tunnel.tx_type %q is not allowed when mode is %s", tx.TxType.ValueString(), mode))
 		}
+		switch tx.TxType.ValueString() {
+		case "vxlan":
+			if mode == "casaVtap" || mode == "oracleSCP" {
+				if tx.TxVNIId.IsNull() || tx.TxVNIId.IsUnknown() || tx.TxVNIId.ValueInt64() == 0 {
+					diags.AddError("Missing tx_tunnel.tx_vni_id", fmt.Sprintf("tx_tunnel.tx_vni_id is required when mode is %s and tx_type is vxlan", mode))
+				}
+			}
+		case "l2gre":
+			if mode == "casaVtap" || mode == "oracleSCP" {
+				if tx.L2GreKey.IsNull() || tx.L2GreKey.IsUnknown() || tx.L2GreKey.ValueInt64() == 0 {
+					diags.AddError("Missing tx_tunnel.l2gre_key", fmt.Sprintf("tx_tunnel.l2gre_key is required when mode is %s and tx_type is l2gre", mode))
+				}
+			}
+		case "udpgre":
+			if mode == "casaVtap" {
+				if !tx.TxVNIId.IsNull() && !tx.TxVNIId.IsUnknown() && tx.TxVNIId.ValueInt64() != 0 {
+					diags.AddError("Invalid tx_tunnel.tx_vni_id", "tx_tunnel.tx_vni_id must not be set when mode is casaVtap and tx_type is udpgre")
+				}
+				if !tx.L2GreKey.IsNull() && !tx.L2GreKey.IsUnknown() && tx.L2GreKey.ValueInt64() != 0 {
+					diags.AddError("Invalid tx_tunnel.l2gre_key", "tx_tunnel.l2gre_key must not be set when mode is casaVtap and tx_type is udpgre")
+				}
+			}
+		}
 		if ip := tx.TxRemoteIpaddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
 			diags.AddError("Invalid tx_tunnel.tx_remote_ipaddress", "tx_tunnel.tx_remote_ipaddress must be a valid IPv4 or IPv6 address")
 		}
 		if ip := tx.TxSrcIpaddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
 			diags.AddError("Invalid tx_tunnel.tx_src_ipaddress", "tx_tunnel.tx_src_ipaddress must be a valid IPv4 or IPv6 address")
 		}
+	}
+
+	if mode != "casaVtap" && (model.ScpConfig.IsNull() || model.ScpConfig.IsUnknown()) {
+		diags.AddError("Missing scp_config", fmt.Sprintf("scp_config is required when mode is %s", mode))
 	}
 
 	if !model.ScpConfig.IsNull() && !model.ScpConfig.IsUnknown() {
@@ -1341,6 +1392,16 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 		if scp.FqdnAlias.IsNull() || scp.FqdnAlias.IsUnknown() || strings.TrimSpace(scp.FqdnAlias.ValueString()) == "" {
 			diags.AddError("Missing scp_config.fqdn_alias", "scp_config.fqdn_alias is required when scp_config is configured")
 		}
+		if mode == "oracleSCP" || mode == "SBINF" || mode == "ericssonSCPOutbound" || mode == "ericssonSCPIn-Outbound" {
+			if scp.NfInstanceAlias.IsNull() || scp.NfInstanceAlias.IsUnknown() || strings.TrimSpace(scp.NfInstanceAlias.ValueString()) == "" {
+				diags.AddError("Missing scp_config.nf_instance_alias", fmt.Sprintf("scp_config.nf_instance_alias is required when mode is %s", mode))
+			}
+		}
+		if mode == "oracleSCP" {
+			if scp.UaAlias.IsNull() || scp.UaAlias.IsUnknown() || strings.TrimSpace(scp.UaAlias.ValueString()) == "" {
+				diags.AddError("Missing scp_config.ua_alias", "scp_config.ua_alias is required when mode is oracleSCP")
+			}
+		}
 		if http2SupportedModes[mode] && (scp.UaAlias.IsNull() || scp.UaAlias.IsUnknown() || strings.TrimSpace(scp.UaAlias.ValueString()) == "") {
 			diags.AddError("Missing scp_config.ua_alias", fmt.Sprintf("scp_config.ua_alias is required when mode is %s", mode))
 		}
@@ -1349,6 +1410,36 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 		}
 		if (!scp.TcpMonitoredFlows.IsNull() && !scp.TcpMonitoredFlows.IsUnknown()) && !http2SupportedModes[mode] {
 			diags.AddError("Invalid scp_config.tcp_monitored_flows", fmt.Sprintf("tcp_monitored_flows is not supported when mode is %s", mode))
+		}
+		if mode == "ericssonSCPOutbound" || mode == "ericssonSCPIn-Outbound" || mode == "nokiaHEP3Inbound" || mode == "nokiaHEP3IMS" {
+			if scp.TcpServerPorts.IsNull() || scp.TcpServerPorts.IsUnknown() {
+				diags.AddError("Missing scp_config.tcp_server_ports", fmt.Sprintf("scp_config.tcp_server_ports is required when mode is %s", mode))
+			}
+		}
+		if mode == "nokiaHEP3Inbound" || mode == "nokiaHEP3IMS" {
+			if !scp.HeaderIndex.IsNull() && !scp.HeaderIndex.IsUnknown() && scp.HeaderIndex.ValueBool() {
+				diags.AddError("Invalid scp_config.header_index", fmt.Sprintf("scp_config.header_index must be false when mode is %s", mode))
+			}
+			if !scp.HeaderCompressionCode.IsNull() && !scp.HeaderCompressionCode.IsUnknown() && scp.HeaderCompressionCode.ValueBool() {
+				diags.AddError("Invalid scp_config.header_compression_code", fmt.Sprintf("scp_config.header_compression_code must be false when mode is %s", mode))
+			}
+			if !scp.AddGigamonHeader.IsNull() && !scp.AddGigamonHeader.IsUnknown() && scp.AddGigamonHeader.ValueBool() {
+				diags.AddError("Invalid scp_config.add_gigamon_header", fmt.Sprintf("scp_config.add_gigamon_header must be false when mode is %s", mode))
+			}
+			if !scp.NfInstanceAlias.IsNull() && !scp.NfInstanceAlias.IsUnknown() && strings.TrimSpace(scp.NfInstanceAlias.ValueString()) != "" {
+				diags.AddError("Invalid scp_config.nf_instance_alias", fmt.Sprintf("scp_config.nf_instance_alias is not configurable when mode is %s", mode))
+			}
+			if !scp.UaAlias.IsNull() && !scp.UaAlias.IsUnknown() && strings.TrimSpace(scp.UaAlias.ValueString()) != "" {
+				diags.AddError("Invalid scp_config.ua_alias", fmt.Sprintf("scp_config.ua_alias is not configurable when mode is %s", mode))
+			}
+		}
+		if mode != "nokiaSCPInbound" {
+			if !scp.NokiaInboundReplaceAuthority.IsNull() && !scp.NokiaInboundReplaceAuthority.IsUnknown() && scp.NokiaInboundReplaceAuthority.ValueBool() {
+				diags.AddError("Invalid scp_config.nokia_inbound_replace_authority", fmt.Sprintf("nokia_inbound_replace_authority is only configurable when mode is nokiaSCPInbound, got %s", mode))
+			}
+			if !scp.NokiaInboundUse3gppTargetApiRoot.IsNull() && !scp.NokiaInboundUse3gppTargetApiRoot.IsUnknown() && scp.NokiaInboundUse3gppTargetApiRoot.ValueBool() {
+				diags.AddError("Invalid scp_config.nokia_inbound_use_3gpp_target_api_root", fmt.Sprintf("nokia_inbound_use_3gpp_target_api_root is only configurable when mode is nokiaSCPInbound, got %s", mode))
+			}
 		}
 	}
 
