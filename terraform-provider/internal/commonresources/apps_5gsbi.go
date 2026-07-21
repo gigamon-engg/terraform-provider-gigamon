@@ -174,7 +174,7 @@ func (r *App5GSBI) Schema(ctx context.Context, req resource.SchemaRequest, resp 
                 Validators: []validator.Int64{
                     int64validator.Any(
                         int64validator.OneOf(0),
-                        int64validator.Between(1200, 1500),
+                        int64validator.Between(1200, 9200),
                     ),
                 },
             },

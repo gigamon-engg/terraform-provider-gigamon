@@ -24,29 +24,28 @@ locals {
 resource "gigamon_app_5gsbi" "sbi5g" {
   monitoring_session_id = local.monitoring_session_id
 
-  alias = "sbi5gAppTemplate"
-  #name  = "sbi5g"
-  type  = "ericssonVTap"
 
-  ip_mapping_alias                      = "sbi-nfinstance"
-  http2_synthesize_tool_mtu_packet_size = 0
-  # http2_synthesize_indexed_headers      = true
-  # http2_synthesize_compressed_headers   = true
-  # transaction_log                       = true
-  # transaction_log_file_interval         = 60
-  log_folder_size                       = 40960
-  # stats_log                             = true
-  # log_folder_loc                        = "/var/log"
+  alias                               = "sbi5gAppTemplate"
+  
+  type                                = "ericssonVTap"
+  ip_mapping_alias                    = "sbi-nfinstance"
+  http2_synthesize_tool_mtu_packet_size = 8800
+  http2_synthesize_indexed_headers    = true
+  http2_synthesize_compressed_headers = true
+  transaction_log                     = true
+  transaction_log_file_interval       = 60
+  log_folder_size                     = 0
+  stats_log                           = true
+  log_folder_loc                      = "/var/log"
 
   ericsson_vtap_config = {
     mode                   = "L7json"
-    # eevtap_version         = "1"
-    num_tcp_flows          = 512
-    tcp_flow_timeout       = 7200
+    eevtap_version         = 2
+    num_tcp_flows          = 256
+    tcp_flow_timeout       = 1800
     num_streams_per_flow   = 8192
-    # http2_request_timeout  = 15
-    # http2_response_timeout = 5
-    # destination_ip         = "SCP"
-    # fqdn_mapping_alias     = "5g-sbiFQDN"
+    http2_request_timeout  = 10
+    http2_response_timeout = 2
+    destination_ip         = "SCP"
   }
 }
