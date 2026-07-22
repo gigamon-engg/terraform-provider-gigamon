@@ -27,6 +27,7 @@ import (
 )
 
 var _ resource.Resource = &Ami{}
+var _ resource.ResourceWithModifyPlan = &Ami{}
 
 // NewAmi creates a new AMI application resource.
 func NewAmi() resource.Resource {
@@ -296,12 +297,7 @@ func (a *Ami) Schema(ctx context.Context, req resource.SchemaRequest, resp *reso
 				Optional:            true,
 				Attributes: map[string]schema.Attribute{
 					"flow_behavior": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("bidir")},
-					"timeout": schema.SingleNestedAttribute{
-						Optional: true,
-						Attributes: map[string]schema.Attribute{
-							"idle": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(300), Validators: []validator.Int32{int32validator.AtLeast(1)}},
-						},
-					},
+					"timeout":       schema.SingleNestedAttribute{Optional: true, Attributes: map[string]schema.Attribute{"idle": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(300), Validators: []validator.Int32{int32validator.AtLeast(1)}}}},
 					"multi_collect":    schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 					"aggregate_mode":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
 					"observ_domain_id": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.AtLeast(0)}},
@@ -478,6 +474,68 @@ func (a *Ami) Configure(ctx context.Context, req resource.ConfigureRequest, resp
 		return
 	}
 	a.fmClient = fmClient
+}
+
+func (a *Ami) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || a.fmClient == nil {
+		return
+	}
+
+	var data AmiModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.MonitoringSessionId.IsNull() || data.MonitoringSessionId.IsUnknown() {
+		return
+	}
+
+	if err := a.validateMonitoringSessionPrereqs(ctx, data.MonitoringSessionId.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
+	}
+}
+
+func (a *Ami) getMonitoringSession(ctx context.Context, monitoringSessionID string) (*FMMonSess, error) {
+	rawID, err := commonutils.UUIDFromTypedID(monitoringSessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	respData, err := a.fmClient.DoRequest(
+		ctx,
+		"GET",
+		fmt.Sprintf("api/v1.3/cloud/monitoringSessions/%s", rawID),
+		nil,
+		nil,
+		nil,
+		"",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var fmResp struct {
+		MonitoringSession FMMonSess `json:"monitoringSession"`
+	}
+	if err := json.Unmarshal(respData, &fmResp); err != nil {
+		return nil, fmt.Errorf("unable to convert monitoring session response to struct: %s error is: %w", string(respData), err)
+	}
+
+	return &fmResp.MonitoringSession, nil
+}
+
+func (a *Ami) validateMonitoringSessionPrereqs(ctx context.Context, monitoringSessionID string) error {
+	ms, err := a.getMonitoringSession(ctx, monitoringSessionID)
+	if err != nil {
+		return fmt.Errorf("failed to read monitoring session: %w", err)
+	}
+
+	if ms.ScaleUnit <= 0 {
+		return fmt.Errorf("AMI requires scale_unit to be configured in the Monitoring Session")
+	}
+
+	return nil
 }
 
 func buildFMAmiIPMatch(m *AmiIPMatchModel, isIPv6 bool) *fmAmiIPMatch {
@@ -810,6 +868,11 @@ func (a *Ami) Create(ctx context.Context, req resource.CreateRequest, resp *reso
 		return
 	}
 
+	if err := a.validateMonitoringSessionPrereqs(ctx, data.MonitoringSessionId.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
+		return
+	}
+
 	fmData, err := a.buildFMAmi(&data)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to create AMI app", err.Error())
@@ -883,6 +946,11 @@ func (a *Ami) Update(ctx context.Context, req resource.UpdateRequest, resp *reso
 	var planData AmiModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &planData)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if err := a.validateMonitoringSessionPrereqs(ctx, planData.MonitoringSessionId.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
 		return
 	}
 
