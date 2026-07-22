@@ -6,6 +6,7 @@ package commonresources
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -83,6 +84,10 @@ func (tm *TrafficMap) ValidateConfig(
 		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
 		return
 	}
+	validateAsfMonitoringSessionPrereqs(ctx, tm.fmClient, cfg.MonitoringSessionId, cfg.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	applyAndValidateAsfSessionFields(cfg.Asf, &resp.Diagnostics)
 }
@@ -118,6 +123,10 @@ func (tm *TrafficMap) Create(ctx context.Context, req resource.CreateRequest, re
 
 	if data.Asf != nil && data.Asf.AsfProfileConfig == nil {
 		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+	validateAsfMonitoringSessionPrereqs(ctx, tm.fmClient, data.MonitoringSessionId, data.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 	applyAndValidateAsfSessionFields(data.Asf, &resp.Diagnostics)
@@ -219,6 +228,10 @@ func (tm *TrafficMap) Update(ctx context.Context, req resource.UpdateRequest, re
 
 	if planData.Asf != nil && planData.Asf.AsfProfileConfig == nil {
 		resp.Diagnostics.AddError("Invalid asf", "asf.asf_profile_config must be set when asf is provided")
+		return
+	}
+	validateAsfMonitoringSessionPrereqs(ctx, tm.fmClient, planData.MonitoringSessionId, planData.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 	applyAndValidateAsfSessionFields(planData.Asf, &resp.Diagnostics)
@@ -640,6 +653,63 @@ func applyAndValidateAsfSessionFields(asf *AsfModel, diags *diag.Diagnostics) {
 			"asf.asf_profile_config.session_fields may include at most one optional vlanId entry in addition to fiveTuple.",
 		)
 	}
+}
+
+func validateAsfMonitoringSessionPrereqs(ctx context.Context, fmClient *fmclient.FmClient, monitoringSessionID types.String, asf *AsfModel, diags *diag.Diagnostics) {
+	if fmClient == nil || asf == nil || asf.AsfProfileConfig == nil {
+		return
+	}
+
+	if monitoringSessionID.IsNull() || monitoringSessionID.IsUnknown() || monitoringSessionID.ValueString() == "" {
+		return
+	}
+
+	ms, err := getMonitoringSessionForMap(ctx, fmClient, monitoringSessionID.ValueString())
+	if err != nil {
+		diags.AddAttributeError(
+			path.Root("asf"),
+			"Invalid monitoring session for ASF",
+			fmt.Sprintf("failed to read monitoring session %q: %v", monitoringSessionID.ValueString(), err),
+		)
+		return
+	}
+
+	if ms.ScaleUnit <= 0 {
+		diags.AddAttributeError(
+			path.Root("asf"),
+			"Invalid monitoring session for ASF",
+			"ASF requires scale_unit to already be configured on the selected monitoring session.",
+		)
+	}
+}
+
+func getMonitoringSessionForMap(ctx context.Context, fmClient *fmclient.FmClient, monitoringSessionID string) (*FMMonSess, error) {
+	rawID, err := commonutils.UUIDFromTypedID(monitoringSessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	respData, err := fmClient.DoRequest(
+		ctx,
+		"GET",
+		fmt.Sprintf("api/v1.3/cloud/monitoringSessions/%s", rawID),
+		nil,
+		nil,
+		nil,
+		"",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var fmResp struct {
+		MonitoringSession FMMonSess `json:"monitoringSession"`
+	}
+	if err := json.Unmarshal(respData, &fmResp); err != nil {
+		return nil, fmt.Errorf("unable to convert monitoring session response to struct: %s error is: %w", string(respData), err)
+	}
+
+	return &fmResp.MonitoringSession, nil
 }
 
 func (em *ExclusionMap) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
