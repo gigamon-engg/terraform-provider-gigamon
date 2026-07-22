@@ -120,11 +120,20 @@ type AmiCefModel struct {
 	RecordType      types.String `tfsdk:"record_type"`
 }
 
+type AmiNetflowModel struct {
+	ActiveTimeout   types.Int32  `tfsdk:"active_timeout"`
+	InactiveTimeout types.Int32  `tfsdk:"inactive_timeout"`
+	RecordType      types.String `tfsdk:"record_type"`
+	TemplateRefresh types.Int32  `tfsdk:"template_refresh"`
+	Version         types.String `tfsdk:"version"`
+}
+
 type AmiExporterConfigModel struct {
 	Type             types.String               `tfsdk:"type"`
 	MaxPktSize       types.Int32                `tfsdk:"max_pkt_size"`
 	AppProfileConfig []AmiAppProfileConfigModel `tfsdk:"app_profile_config"`
 	Cef              *AmiCefModel               `tfsdk:"cef"`
+	Netflow          *AmiNetflowModel           `tfsdk:"netflow"`
 }
 
 type AmiExporterModel struct {
@@ -224,11 +233,20 @@ type fmAmiCef struct {
 	RecordType      string `json:"recordType,omitempty"`
 }
 
+type fmAmiNetflow struct {
+	ActiveTimeout   int32  `json:"activeTimeout,omitempty"`
+	InactiveTimeout int32  `json:"inactiveTimeout,omitempty"`
+	RecordType      string `json:"recordType,omitempty"`
+	TemplateRefresh int32  `json:"templateRefresh,omitempty"`
+	Version         string `json:"version,omitempty"`
+}
+
 type fmAmiExporterConfig struct {
 	Type             string                  `json:"type,omitempty"`
 	MaxPktSize       int32                   `json:"maxPktSize,omitempty"`
 	AppProfileConfig []fmAmiAppProfileConfig `json:"appProfileConfig,omitempty"`
 	Cef              *fmAmiCef               `json:"cef,omitempty"`
+	Netflow          *fmAmiNetflow           `json:"netflow,omitempty"`
 }
 
 type fmAmiExporter struct {
@@ -265,6 +283,8 @@ type FMAmi struct {
 
 type amiDpiInjectLimitValidator struct{}
 
+type amiMaxPktSizeValidator struct{}
+
 func (v amiDpiInjectLimitValidator) Description(ctx context.Context) string {
 	return "must be 0 or between 20 and 50"
 }
@@ -292,6 +312,137 @@ func (v amiDpiInjectLimitValidator) ValidateInt32(
 		"Invalid AMI dpi_inject_limit",
 		fmt.Sprintf("dpi_inject_limit must be 0 or between 20 and 50, got %d", vv),
 	)
+}
+
+func (v amiMaxPktSizeValidator) Description(ctx context.Context) string {
+	return "must be 0 or between 1280 and 9001"
+}
+
+func (v amiMaxPktSizeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v amiMaxPktSizeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	vv := req.ConfigValue.ValueInt32()
+	if vv == 0 || (vv >= 1280 && vv <= 9001) {
+		return
+	}
+
+	resp.Diagnostics.AddAttributeError(
+		req.Path,
+		"Invalid AMI max_pkt_size",
+		fmt.Sprintf("max_pkt_size must be 0 or between 1280 and 9001, got %d", vv),
+	)
+}
+
+func isAmiRecordTypeValid(v string) bool {
+	return v == "segregated" || v == "cohesive"
+}
+
+func validateAmiCefConfig(cef *AmiCefModel) error {
+	if cef == nil {
+		return fmt.Errorf("exporter_config.cef block is required when exporter_config.type is cef")
+	}
+
+	active := cef.ActiveTimeout.ValueInt32()
+	inactive := cef.InactiveTimeout.ValueInt32()
+	recordType := cef.RecordType.ValueString()
+
+	if active < 1 || active > 604800 {
+		return fmt.Errorf("exporter_config.cef.active_timeout must be between 1 and 604800, got %d", active)
+	}
+	if inactive < 1 || inactive > 604800 {
+		return fmt.Errorf("exporter_config.cef.inactive_timeout must be between 1 and 604800, got %d", inactive)
+	}
+	if !isAmiRecordTypeValid(recordType) {
+		return fmt.Errorf("exporter_config.cef.record_type must be one of: segregated, cohesive")
+	}
+
+	return nil
+}
+
+func validateAmiNetflowConfig(netflow *AmiNetflowModel, flowBehavior string) error {
+	if netflow == nil {
+		return fmt.Errorf("exporter_config.netflow block is required when exporter_config.type is netflow")
+	}
+
+	active := netflow.ActiveTimeout.ValueInt32()
+	inactive := netflow.InactiveTimeout.ValueInt32()
+	recordType := netflow.RecordType.ValueString()
+	templateRefresh := netflow.TemplateRefresh.ValueInt32()
+	version := netflow.Version.ValueString()
+
+	if active < 1 || active > 604800 {
+		return fmt.Errorf("exporter_config.netflow.active_timeout must be between 1 and 604800, got %d", active)
+	}
+	if inactive < 1 || inactive > 604800 {
+		return fmt.Errorf("exporter_config.netflow.inactive_timeout must be between 1 and 604800, got %d", inactive)
+	}
+	if !isAmiRecordTypeValid(recordType) {
+		return fmt.Errorf("exporter_config.netflow.record_type must be one of: segregated, cohesive")
+	}
+	if templateRefresh < 1 || templateRefresh > 216000 {
+		return fmt.Errorf("exporter_config.netflow.template_refresh must be between 1 and 216000, got %d", templateRefresh)
+	}
+	if version != "ipfix" && version != "v5" && version != "v9" {
+		return fmt.Errorf("exporter_config.netflow.version must be one of: ipfix, v5, v9")
+	}
+	if flowBehavior == "bidir" && (version == "v5" || version == "v9") {
+		return fmt.Errorf("flow_behavior=bidir does not support exporter_config.netflow.version values v5 or v9")
+	}
+
+	return nil
+}
+
+func validateAmiExporterConfigRules(data *AmiModel) error {
+	if data == nil || data.AppMetadata == nil {
+		return nil
+	}
+
+	flowBehavior := "bidir"
+	if !data.AppMetadata.FlowBehavior.IsNull() && !data.AppMetadata.FlowBehavior.IsUnknown() {
+		flowBehavior = data.AppMetadata.FlowBehavior.ValueString()
+	}
+
+	for i, exporter := range data.AppMetadata.Exporters {
+		if exporter.ExporterConfig == nil {
+			return fmt.Errorf("exporters[%d].exporter_config is required", i)
+		}
+
+		cfg := exporter.ExporterConfig
+		exporterType := cfg.Type.ValueString()
+		hasCef := cfg.Cef != nil
+		hasNetflow := cfg.Netflow != nil
+
+		switch exporterType {
+		case "cef":
+			if hasNetflow {
+				return fmt.Errorf("exporters[%d]: exporter_config.netflow must not be configured when exporter_config.type is cef", i)
+			}
+			if err := validateAmiCefConfig(cfg.Cef); err != nil {
+				return fmt.Errorf("exporters[%d]: %w", i, err)
+			}
+		case "netflow":
+			if hasCef {
+				return fmt.Errorf("exporters[%d]: exporter_config.cef must not be configured when exporter_config.type is netflow", i)
+			}
+			if err := validateAmiNetflowConfig(cfg.Netflow, flowBehavior); err != nil {
+				return fmt.Errorf("exporters[%d]: %w", i, err)
+			}
+		default:
+			return fmt.Errorf("exporters[%d]: exporter_config.type must be one of: cef, netflow", i)
+		}
+	}
+
+	return nil
 }
 
 func (a *Ami) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -461,15 +612,25 @@ func amiExporterNestedObject() schema.NestedAttributeObject {
 		"exporter_config": schema.SingleNestedAttribute{
 			Required: true,
 			Attributes: map[string]schema.Attribute{
-				"type":               schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("cef")},
-				"max_pkt_size":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.AtLeast(0)}},
+				"type":               schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("cef"), Validators: []validator.String{stringvalidator.OneOf("cef", "netflow")}},
+				"max_pkt_size":       schema.Int32Attribute{Required: true, Validators: []validator.Int32{amiMaxPktSizeValidator{}}},
 				"app_profile_config": schema.ListNestedAttribute{Optional: true, NestedObject: amiAppProfileConfigNestedObject()},
 				"cef": schema.SingleNestedAttribute{
 					Optional: true,
 					Attributes: map[string]schema.Attribute{
-						"active_timeout":   schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(60), Validators: []validator.Int32{int32validator.AtLeast(1)}},
-						"inactive_timeout": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.AtLeast(1)}},
-						"record_type":      schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("segregated")},
+						"active_timeout":   schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(60), Validators: []validator.Int32{int32validator.Between(1, 604800)}},
+						"inactive_timeout": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.Between(1, 604800)}},
+						"record_type":      schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("segregated"), Validators: []validator.String{stringvalidator.OneOf("segregated", "cohesive")}},
+					},
+				},
+				"netflow": schema.SingleNestedAttribute{
+					Optional: true,
+					Attributes: map[string]schema.Attribute{
+						"active_timeout":   schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(60), Validators: []validator.Int32{int32validator.Between(1, 604800)}},
+						"inactive_timeout": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(15), Validators: []validator.Int32{int32validator.Between(1, 604800)}},
+						"record_type":      schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("segregated"), Validators: []validator.String{stringvalidator.OneOf("segregated", "cohesive")}},
+						"template_refresh": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(60), Validators: []validator.Int32{int32validator.Between(1, 216000)}},
+						"version":          schema.StringAttribute{Required: true, Validators: []validator.String{stringvalidator.OneOf("ipfix", "v5", "v9")}},
 					},
 				},
 			},
@@ -524,6 +685,10 @@ func (a *Ami) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, re
 
 	if err := a.validateMonitoringSessionPrereqs(ctx, data.MonitoringSessionId.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
+	}
+
+	if err := validateAmiExporterConfigRules(&data); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI exporter configuration", err.Error())
 	}
 }
 
@@ -711,6 +876,15 @@ func appMetadataModelToAny(model *AmiAppMetadataModel) (any, error) {
 				if exporter.ExporterConfig.Cef != nil {
 					cfg.Cef = &fmAmiCef{ActiveTimeout: exporter.ExporterConfig.Cef.ActiveTimeout.ValueInt32(), InactiveTimeout: exporter.ExporterConfig.Cef.InactiveTimeout.ValueInt32(), RecordType: exporter.ExporterConfig.Cef.RecordType.ValueString()}
 				}
+				if exporter.ExporterConfig.Netflow != nil {
+					cfg.Netflow = &fmAmiNetflow{
+						ActiveTimeout:   exporter.ExporterConfig.Netflow.ActiveTimeout.ValueInt32(),
+						InactiveTimeout: exporter.ExporterConfig.Netflow.InactiveTimeout.ValueInt32(),
+						RecordType:      exporter.ExporterConfig.Netflow.RecordType.ValueString(),
+						TemplateRefresh: exporter.ExporterConfig.Netflow.TemplateRefresh.ValueInt32(),
+						Version:         exporter.ExporterConfig.Netflow.Version.ValueString(),
+					}
+				}
 				fmExporter.ExporterConfig = cfg
 			}
 			fmModel.Exporters = append(fmModel.Exporters, fmExporter)
@@ -842,6 +1016,15 @@ func anyToAppMetadataModel(raw any) *AmiAppMetadataModel {
 					RecordType:      types.StringValue(exp.ExporterConfig.Cef.RecordType),
 				}
 			}
+			if exp.ExporterConfig.Netflow != nil {
+				cfg.Netflow = &AmiNetflowModel{
+					ActiveTimeout:   types.Int32Value(exp.ExporterConfig.Netflow.ActiveTimeout),
+					InactiveTimeout: types.Int32Value(exp.ExporterConfig.Netflow.InactiveTimeout),
+					RecordType:      types.StringValue(exp.ExporterConfig.Netflow.RecordType),
+					TemplateRefresh: types.Int32Value(exp.ExporterConfig.Netflow.TemplateRefresh),
+					Version:         types.StringValue(exp.ExporterConfig.Netflow.Version),
+				}
+			}
 			modelExporter.ExporterConfig = cfg
 		}
 		model.Exporters = append(model.Exporters, modelExporter)
@@ -901,6 +1084,11 @@ func (a *Ami) Create(ctx context.Context, req resource.CreateRequest, resp *reso
 
 	if err := a.validateMonitoringSessionPrereqs(ctx, data.MonitoringSessionId.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
+		return
+	}
+
+	if err := validateAmiExporterConfigRules(&data); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI exporter configuration", err.Error())
 		return
 	}
 
@@ -982,6 +1170,11 @@ func (a *Ami) Update(ctx context.Context, req resource.UpdateRequest, resp *reso
 
 	if err := a.validateMonitoringSessionPrereqs(ctx, planData.MonitoringSessionId.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Invalid monitoring session for AMI", err.Error())
+		return
+	}
+
+	if err := validateAmiExporterConfigRules(&planData); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI exporter configuration", err.Error())
 		return
 	}
 

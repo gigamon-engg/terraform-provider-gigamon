@@ -19,39 +19,15 @@ provider "gigamon" {
 locals {
   monitoring_domain_id = "monitoringDomin::vmware::83ef84c6-4889-4594-b8f8-6824cf90dea7"
   connection_id = "connection::vmware::e8ae7cf3-1563-46f6-a490-1a6362e4a3a9"
+  monitoring_session_id = "monitoringSession::vmware::3c1bde50-c3d5-403f-8576-d7f60f5c5657"
 }
 
-########################################
-# 2) UCTV Monitoring Session (TF-managed, “Simple MS”)
-########################################
-
-resource "gigamon_monitoring_session" "uctv_ms" {
-  alias                = "tf-uctv-ms-1"
-  description          = "UCTV MS for 3PO drift tests"
-  monitoring_domain_id = local.monitoring_domain_id
-  connection_id        = local.connection_id
-
-  tapping_method = "uctv"
-
-   fast_mode          = false
-   scale_unit         = 1
-  distribute_traffic = true
-
-  traffic_acquisition = {
-    mirroring = {
-      secure_tunnels_enabled = false
-    }
-    precryption = {
-      secure_tunnels_enabled = false
-    }
-  }
-}
 
 
 
 resource "gigamon_app_ami" "ami_main" {
   alias                 = "tf-ami-main"
-  monitoring_session_id = gigamon_monitoring_session.uctv_ms.id
+  monitoring_session_id = local.monitoring_session_id
   description           = "AMI app minimal validation with one exporter"
 
   app_metadata = {
@@ -71,8 +47,8 @@ resource "gigamon_app_ami" "ami_main" {
         name   = "ami-exporter-1"
 
         exporter_config = {
-          type         = "cef"
-          max_pkt_size = 0
+          type         = "netflow"
+          max_pkt_size = 1500
 
           app_profile_config = [
             {
@@ -104,10 +80,12 @@ resource "gigamon_app_ami" "ami_main" {
             }
           ]
 
-          cef = {
-            active_timeout   = 60
-            inactive_timeout = 15
-            record_type      = "segregated"
+          netflow = {
+            active_timeout   = 1
+            inactive_timeout = 1
+            record_type      = "cohesive"
+            version = "ipfix"
+            templateRefresh=60
           }
         }
       }
