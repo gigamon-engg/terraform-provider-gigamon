@@ -263,6 +263,37 @@ type FMAmi struct {
 	AppMetadata any    `json:"appMetadata,omitempty"`
 }
 
+type amiDpiInjectLimitValidator struct{}
+
+func (v amiDpiInjectLimitValidator) Description(ctx context.Context) string {
+	return "must be 0 or between 20 and 50"
+}
+
+func (v amiDpiInjectLimitValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v amiDpiInjectLimitValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	vv := req.ConfigValue.ValueInt32()
+	if vv == 0 || (vv >= 20 && vv <= 50) {
+		return
+	}
+
+	resp.Diagnostics.AddAttributeError(
+		req.Path,
+		"Invalid AMI dpi_inject_limit",
+		fmt.Sprintf("dpi_inject_limit must be 0 or between 20 and 50, got %d", vv),
+	)
+}
+
 func (a *Ami) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_ami"
 }
@@ -310,7 +341,7 @@ func (a *Ami) Schema(ctx context.Context, req resource.SchemaRequest, resp *reso
 							"datalink":  schema.SingleNestedAttribute{Optional: true, Attributes: map[string]schema.Attribute{"vlan": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)}}},
 						},
 					},
-					"dpi_inject_limit":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(30), Validators: []validator.Int32{int32validator.AtLeast(0)}},
+					"dpi_inject_limit":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(30), Validators: []validator.Int32{amiDpiInjectLimitValidator{}}},
 					"exporters":              schema.ListNestedAttribute{Optional: true, NestedObject: amiExporterNestedObject()},
 					"persist_profile_config": amiPersistProfileConfigSchema(),
 				},
