@@ -1,3 +1,27 @@
+---
+page_title: "Inbound Tunnel"
+subcategory: "Tunnels and Raw Endpoints"
+description: "Manage inbound tunnels in Gigamon FM."
+---
+
+<!--
+Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+
+Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>
+-->
+
 ## Resource: `gigamon_tunnel_in`
 
 A **tunnel in** is an **ingress tunnel endpoint** inside a **Monitoring Session** that receives monitored traffic from external peers into Gigamon (for example, from remote sites, ERSPAN sources, TLS-PCAPNG senders).  
@@ -14,7 +38,7 @@ Supported tunnel types for `gigamon_tunnel_in`:
 - `erspan`
 - `tlspcapng` (TLS-PCAPNG, configured via `tls_pcapng` block)
 
-> `udp` and `udpgre` are supported for ingress tunnels in this provider.  
+> `udp` and `udpgre` are **not supported** for ingress tunnels in this provider.  
 > `udpgre` (GRE over UDP) and would require a PCAPNG application that is not in scope.
 
 ---

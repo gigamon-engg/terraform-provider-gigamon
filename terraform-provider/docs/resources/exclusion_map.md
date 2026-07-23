@@ -1,3 +1,26 @@
+---
+page_title: "Exclusion Map"
+subcategory: "Maps"
+description: "Manage exclusion maps in Gigamon FM."
+---
+
+<!--
+Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+
+Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>
+-->
 
 # gigamon_exclusion_map
 
@@ -5,7 +28,7 @@ A **Gigamon exclusion map** classifies monitored traffic inside a Monitoring Ses
 
 An exclusion map contains one or more **rule sets** (`rule_sets`). Each rule set contains **drop rules only** and includes an **AEP ID** (`aep_id`) as part of the resource definition. Exclusion maps are **standalone ATS resources** and cannot be linked to or from other resources in Fabric Manager.
 
-Unlike `gigamon_traffic_map`, an exclusion map **does not allow `pass_rules`**. If `pass_rules` is present in any `rule_sets` block, provider validation fails.
+Unlike `gigamon_traffic_map`, an exclusion map **does not allow `pass_rules`**. If `pass_rules` is present in any `rule_sets` item, provider validation fails.
 
 ## Example Usage
 
@@ -17,26 +40,30 @@ resource "gigamon_exclusion_map" "frontend_exclude" {
   name                  = "frontend-exclusion-map"
   description           = "Exclude frontend test traffic from ATS"
 
-  rule_sets {
-    rule_set_id = "1"
-    priority    = 1
-    aep_id      = 10
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 10
 
-    drop_rules {
-      rule_id = 1
+      drop_rules = [
+        {
+          rule_id = 1
 
-      vm_tag_source {
-        tag_name  = "environment"
-        tag_value = "test"
-      }
+          vm_tag_source = {
+            tag_name  = "environment"
+            tag_value = "test"
+          }
 
-      ipv4_protocol {
-        protocol_min    = 6
-        protocol_max    = 6
-        protocol_subset = "all"
-      }
+          ipv4_protocol = {
+            protocol_min    = 6
+            protocol_max    = 6
+            protocol_subset = "all"
+          }
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 
@@ -44,9 +71,111 @@ resource "gigamon_exclusion_map" "frontend_exclude" {
 
 `gigamon_exclusion_map` is a standalone ATS resource in Fabric Manager.
 
-- You cannot create a `gigamon_link` to or from an exclusion map.
-- `aep_id` is still a required field in each rule set because it is part of the map definition.
-- Do not use an exclusion map `id` as `source_id` or `dest_id` in `gigamon_link`.
+### Multiple rule sets and drop rules from variables
+
+Use a `for` expression to build `rule_sets` and nested `drop_rules` from a structured list
+variable — useful when multiple workload groups or subnets each need their own ATS exclusion
+priority and AEP.
+
+```hcl
+# ── Variables ────────────────────────────────────────────────────────────────
+
+variable "excluded_groups" {
+  description = "ATS exclusion rule sets, one entry per exclusion category"
+  type = list(object({
+    priority  = number        # 1–5
+    aep_id    = number        # 2–63
+    vm_tags   = list(object({ # one drop_rule per VM tag pair
+      tag_name  = string
+      tag_value = string
+    }))
+  }))
+}
+
+# ── Exclusion map ─────────────────────────────────────────────────────────────
+
+resource "gigamon_exclusion_map" "ats_exclude" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "ats-vm-tag-exclusion"
+
+  rule_sets = [
+    for i, rs in var.excluded_groups : {
+      rule_set_id = tostring(i + 1)
+      priority    = rs.priority
+      aep_id      = rs.aep_id
+
+      # Each VM tag pair becomes a separate drop_rule (OR-combined within the rule set)
+      drop_rules = [
+        for j, tag in rs.vm_tags : {
+          rule_id = j + 1
+          vm_tag_source = {
+            tag_name  = tag.tag_name
+            tag_value = tag.tag_value
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Example `terraform.tfvars`:
+
+```hcl
+excluded_groups = [
+  {
+    priority = 1
+    aep_id   = 10
+    vm_tags  = [
+      { tag_name = "environment", tag_value = "test" },
+      { tag_name = "environment", tag_value = "dev" },
+    ]
+  },
+  {
+    priority = 2
+    aep_id   = 11
+    vm_tags  = [
+      { tag_name = "team", tag_value = "infra" },
+    ]
+  },
+]
+```
+
+### Multiple rule sets with subnet-based drop rules
+
+```hcl
+variable "excluded_subnets" {
+  description = "ATS exclusion sets driven by source subnets to suppress"
+  type = list(object({
+    priority = number
+    aep_id   = number
+    cidrs    = list(string)   # one drop_rule per CIDR
+  }))
+}
+
+resource "gigamon_exclusion_map" "ats_subnets" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "ats-subnet-exclusion"
+
+  rule_sets = [
+    for i, rs in var.excluded_subnets : {
+      rule_set_id = tostring(i + 1)
+      priority    = rs.priority
+      aep_id      = rs.aep_id
+
+      drop_rules = [
+        for j, cidr in rs.cidrs : {
+          rule_id = j + 1
+          ipv4_source = {
+            address   = cidrhost(cidr, 0)
+            cidr_mask = tostring(split("/", cidr)[1])
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Argument Reference
 
@@ -55,41 +184,45 @@ resource "gigamon_exclusion_map" "frontend_exclude" {
 - `monitoring_session_id` (String, **Required**) – ID of the Monitoring Session that owns this exclusion map. Typically set from `gigamon_monitoring_session.<name>.id`. Changing this forces a new resource.
 - `name` (String, **Required**) – Name of the exclusion map, unique within the Monitoring Session.
 - `description` (String, Optional) – Free-form description for this exclusion map. If set, it must be non-empty.
-- `rule_sets` (Block List, **Required**) – One or more rule sets that define how traffic is matched for exclusion. At least **1** and at most **5** rule sets per map.
+- `rule_sets` (List of Objects, **Required**) – One or more rule sets that define how traffic is matched for exclusion. At least **1** and at most **5** rule sets per map.
 
-## `rule_sets` Block
+## `rule_sets`
 
 ```hcl
-rule_sets {
-  rule_set_id = "1"
-  priority    = 1
-  aep_id      = 10
+rule_sets = [
+  {
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 10
 
-  drop_rules { ... }
-}
+    drop_rules = [{ ... }]
+  }
+]
 ```
 
 - `rule_set_id` (String, **Required**) – Identifier of this rule set within the map. Must be a string `"1"`–`"5"`.
 - `priority` (Number, **Required**) – Priority of this rule set. Range: **1–5**. Lower value = higher priority.
 - `aep_id` (Number, **Required**) – AEP identifier for this rule set. Range: **2–63**. This field is part of the exclusion map definition, but exclusion maps are standalone resources and are not linked by `gigamon_link`.
-- `drop_rules` (Block List, **Required for exclusion maps**) – Rules for traffic to **exclude**. Must contain at least one rule when present.
+- `drop_rules` (List of Objects, **Required for exclusion maps**) – Rules for traffic to **exclude**. Must contain at least one rule when present.
 - `pass_rules` – **Not supported** on exclusion maps.
 
 > Exclusion maps are used for ATS target selection and support **only `drop_rules`**.
-> If `pass_rules` appears in any `rule_sets` block, the provider returns a validation error.
+> If `pass_rules` appears in any `rule_sets` item, the provider returns a validation error.
 
-## `drop_rules` Block
+## `drop_rules`
 
-Each `drop_rules` block represents one rule. All rule elements inside a single rule are combined with **AND**. Multiple rules inside `drop_rules` are combined with **OR**.
+Each `drop_rules` item represents one rule. All rule elements inside a single rule are combined with **AND**. Multiple rules inside `drop_rules` are combined with **OR**.
 
 ```hcl
-drop_rules {
-  rule_id = 1
+drop_rules = [
+  {
+    rule_id = 1
 
-  ether_type { ... }
-  ipv4_source { ... }
-  ipv4_protocol { ... }
-}
+    ether_type = { ... }
+    ipv4_source = { ... }
+    ipv4_protocol = { ... }
+  }
+]
 ```
 
 - `rule_id` (Number, **Required**) – Identifier of this rule within the rule set. Recommended range **1–5**.
@@ -122,7 +255,7 @@ Each rule may include zero or more of the following match condition blocks. In p
 ### `ether_type`
 
 ```hcl
-ether_type {
+ether_type = {
   nested_level_count = 0
   ether_type         = "0x0800"
   # or use a range:
@@ -138,7 +271,7 @@ ether_type {
 ### `l2_src_mac` / `l2_dst_mac`
 
 ```hcl
-l2_src_mac {
+l2_src_mac = {
   nested_level_count = 0
   mac_address        = "00:11:22:33:44:55"
   mac_address_mask   = "FF:FF:FF:FF:FF:FF"
@@ -146,7 +279,7 @@ l2_src_mac {
 ```
 
 ```hcl
-l2_dst_mac {
+l2_dst_mac = {
   mac_address_start = "00:11:22:33:44:00"
   mac_address_end   = "00:11:22:33:44:FF"
 }
@@ -160,7 +293,7 @@ l2_dst_mac {
 ### `ip_version`
 
 ```hcl
-ip_version {
+ip_version = {
   nested_level_count = 0
   ip_version         = "v4"
 }
@@ -172,7 +305,7 @@ ip_version {
 ### `ipv4_source` / `ipv4_destination`
 
 ```hcl
-ipv4_source {
+ipv4_source = {
   nested_level_count = 0
   address            = "10.0.0.0"
   cidr_mask          = "24"
@@ -188,7 +321,7 @@ ipv4_source {
 ### `ipv6_source` / `ipv6_destination`
 
 ```hcl
-ipv6_source {
+ipv6_source = {
   nested_level_count = 0
   address            = "2001:db8::"
   cidr_mask          = "64"
@@ -204,7 +337,7 @@ ipv6_source {
 ### `vm_name_source` / `vm_name_destination`
 
 ```hcl
-vm_name_source {
+vm_name_source = {
   vm_name_prefix = "frontend-"
 }
 ```
@@ -214,7 +347,7 @@ vm_name_source {
 ### `vm_tag_source` / `vm_tag_destination`
 
 ```hcl
-vm_tag_source {
+vm_tag_source = {
   tag_name  = "environment"
   tag_value = "test"
 }
@@ -226,7 +359,7 @@ vm_tag_source {
 ### `ipv4_dscp` / `ipv6_dscp`
 
 ```hcl
-ipv4_dscp {
+ipv4_dscp = {
   nested_level_count = 0
   dscp               = "af11"
 }
@@ -238,7 +371,7 @@ ipv4_dscp {
 ### `ipv4_fragmentation`
 
 ```hcl
-ipv4_fragmentation {
+ipv4_fragmentation = {
   nested_level_count = 0
   mode               = "unfragmented_only"
 }
@@ -255,7 +388,7 @@ ipv4_fragmentation {
 ### `ipv4_protocol`
 
 ```hcl
-ipv4_protocol {
+ipv4_protocol = {
   nested_level_count = 0
   protocol_min       = 6
   protocol_max       = 6
@@ -271,7 +404,7 @@ ipv4_protocol {
 ### `erspan_id`
 
 ```hcl
-erspan_id {
+erspan_id = {
   erspan_id_min    = 1
   erspan_id_max    = 10
   erspan_id_subset = "all"
@@ -285,7 +418,7 @@ erspan_id {
 ### `ipv4_ttl`
 
 ```hcl
-ipv4_ttl {
+ipv4_ttl = {
   nested_level_count = 0
   ttl_min            = 64
   ttl_max            = 128
@@ -301,7 +434,7 @@ ipv4_ttl {
 ### `ipv4_tos`
 
 ```hcl
-ipv4_tos {
+ipv4_tos = {
   nested_level_count = 0
   tos_min            = "0A"
   tos_max            = "1F"
@@ -317,7 +450,7 @@ ipv4_tos {
 ### `gre_key`
 
 ```hcl
-gre_key {
+gre_key = {
   gre_key_min    = "0000000A"
   gre_key_max    = "000000FF"
   gre_key_subset = "all"
