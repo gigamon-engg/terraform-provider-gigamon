@@ -118,7 +118,7 @@ function build_artifact {
     fi
 
     # Form the artifact for this version/os/arch
-    terraform-provider/build/build.py --binary terraform-provider-gigamon --os $3 --arch $4 --version $2 --base_dir $1
+    build/build.py --binary terraform-provider-gigamon --os $3 --arch $4 --version $2 --base_dir $1
 }
 
 
