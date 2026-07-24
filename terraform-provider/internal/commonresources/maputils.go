@@ -204,6 +204,24 @@ type RulesModel struct {
 	GreKey            *GreKeyRuleModel   `tfsdk:"gre_key"`
 }
 
+type AppRuleApplicationModel struct {
+	Name types.String `tfsdk:"name"`
+}
+
+type AppProfileConfigRuleModel struct {
+	Applications []AppRuleApplicationModel `tfsdk:"applications"`
+	Type         types.String              `tfsdk:"type"`
+}
+
+type AppRuleModel struct {
+	AppProfileConfig *AppProfileConfigRuleModel `tfsdk:"app_profile_config"`
+}
+
+type AppRulesModel struct {
+	PassRules []AppRuleModel `tfsdk:"pass_rules"`
+	DropRules []AppRuleModel `tfsdk:"drop_rules"`
+}
+
 // RuleSetModel which is a ruleset, which contains a rule set ID, the aepID which is used
 // to direct the traffic hitting thi ruleset, and the actual pass/drop rules of this ruleset
 type RuleSetModel struct {
@@ -212,6 +230,7 @@ type RuleSetModel struct {
 	AepId     types.Int32  `tfsdk:"aep_id"`
 	PassRules []RulesModel `tfsdk:"pass_rules"`
 	DropRules []RulesModel `tfsdk:"drop_rules"`
+	AppRules  *AppRulesModel `tfsdk:"app_rules"`
 }
 
 // MAC filter list entries for macFilterList.Pass
@@ -389,6 +408,25 @@ type RuleSetGo struct {
 	AepId     int32     `json:"aepId"`
 	PassRules []RulesGo `json:"passRules"`
 	DropRules []RulesGo `json:"dropRules"`
+	AppRules  *appRulesGo `json:"appRules,omitempty"`
+}
+
+type appRuleApplicationGo struct {
+	Name string `json:"name"`
+}
+
+type appProfileConfigRuleGo struct {
+	Applications []appRuleApplicationGo `json:"applications,omitempty"`
+	Type         string                 `json:"type,omitempty"`
+}
+
+type appRuleGo struct {
+	AppProfileConfig *appProfileConfigRuleGo `json:"appProfileConfig,omitempty"`
+}
+
+type appRulesGo struct {
+	PassRules []appRuleGo `json:"passRules,omitempty"`
+	DropRules []appRuleGo `json:"dropRules,omitempty"`
 }
 
 // MAC filter list element in macFilterList.Pass
@@ -1453,6 +1491,46 @@ func RuleSetSchema() schema.NestedAttributeObject {
 					listvalidator.SizeAtLeast(1),
 				},
 			},
+			"app_rules": schema.SingleNestedAttribute{
+				MarkdownDescription: "Application rules. Supported only when ASF is enabled on the traffic map.",
+				Optional:            true,
+				Attributes: map[string]schema.Attribute{
+					"pass_rules": schema.ListNestedAttribute{
+						Optional: true,
+						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"app_profile_config": schema.SingleNestedAttribute{
+								Required: true,
+								Attributes: map[string]schema.Attribute{
+									"applications": schema.ListNestedAttribute{
+										Optional: true,
+										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+											"name": schema.StringAttribute{Required: true},
+										}},
+									},
+									"type": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("filter")},
+								},
+							},
+						}},
+					},
+					"drop_rules": schema.ListNestedAttribute{
+						Optional: true,
+						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"app_profile_config": schema.SingleNestedAttribute{
+								Required: true,
+								Attributes: map[string]schema.Attribute{
+									"applications": schema.ListNestedAttribute{
+										Optional: true,
+										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+											"name": schema.StringAttribute{Required: true},
+										}},
+									},
+									"type": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("filter")},
+								},
+							},
+						}},
+					},
+				},
+			},
 		},
 	}
 }
@@ -1951,6 +2029,50 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 				ModelRulesToGoRules(ctx, &dropRulesModel),
 			)
 		}
+
+		if data.Asf != nil && data.Asf.AsfProfileConfig != nil && modelRuleSet.AppRules != nil {
+			appRules := &appRulesGo{}
+
+			if len(modelRuleSet.AppRules.PassRules) > 0 {
+				appRules.PassRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.PassRules))
+				for _, m := range modelRuleSet.AppRules.PassRules {
+					goRule := appRuleGo{}
+					if m.AppProfileConfig != nil {
+						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
+						if len(m.AppProfileConfig.Applications) > 0 {
+							cfg.Applications = make([]appRuleApplicationGo, 0, len(m.AppProfileConfig.Applications))
+							for _, app := range m.AppProfileConfig.Applications {
+								cfg.Applications = append(cfg.Applications, appRuleApplicationGo{Name: app.Name.ValueString()})
+							}
+						}
+						goRule.AppProfileConfig = cfg
+					}
+					appRules.PassRules = append(appRules.PassRules, goRule)
+				}
+			}
+
+			if len(modelRuleSet.AppRules.DropRules) > 0 {
+				appRules.DropRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.DropRules))
+				for _, m := range modelRuleSet.AppRules.DropRules {
+					goRule := appRuleGo{}
+					if m.AppProfileConfig != nil {
+						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
+						if len(m.AppProfileConfig.Applications) > 0 {
+							cfg.Applications = make([]appRuleApplicationGo, 0, len(m.AppProfileConfig.Applications))
+							for _, app := range m.AppProfileConfig.Applications {
+								cfg.Applications = append(cfg.Applications, appRuleApplicationGo{Name: app.Name.ValueString()})
+							}
+						}
+						goRule.AppProfileConfig = cfg
+					}
+					appRules.DropRules = append(appRules.DropRules, goRule)
+				}
+			}
+
+			if len(appRules.PassRules) > 0 || len(appRules.DropRules) > 0 {
+				goRuleSet.AppRules = appRules
+			}
+		}
 		goMap.RuleSets = append(goMap.RuleSets, goRuleSet)
 	}
 
@@ -2090,6 +2212,47 @@ func GetMSMapData(
 					}
 					copyGoRuleGrouptoModel(ctx, &modelRules, &goRules)
 					modelRuleSet.DropRules = append(modelRuleSet.DropRules, modelRules)
+				}
+
+				if goRuleSet.AppRules != nil {
+					modelAppRules := &AppRulesModel{}
+					if len(goRuleSet.AppRules.PassRules) > 0 {
+						modelAppRules.PassRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.PassRules))
+						for _, goRule := range goRuleSet.AppRules.PassRules {
+							modelRule := AppRuleModel{}
+							if goRule.AppProfileConfig != nil {
+								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
+								if len(goRule.AppProfileConfig.Applications) > 0 {
+									cfg.Applications = make([]AppRuleApplicationModel, 0, len(goRule.AppProfileConfig.Applications))
+									for _, app := range goRule.AppProfileConfig.Applications {
+										cfg.Applications = append(cfg.Applications, AppRuleApplicationModel{Name: types.StringValue(app.Name)})
+									}
+								}
+								modelRule.AppProfileConfig = cfg
+							}
+							modelAppRules.PassRules = append(modelAppRules.PassRules, modelRule)
+						}
+					}
+					if len(goRuleSet.AppRules.DropRules) > 0 {
+						modelAppRules.DropRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.DropRules))
+						for _, goRule := range goRuleSet.AppRules.DropRules {
+							modelRule := AppRuleModel{}
+							if goRule.AppProfileConfig != nil {
+								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
+								if len(goRule.AppProfileConfig.Applications) > 0 {
+									cfg.Applications = make([]AppRuleApplicationModel, 0, len(goRule.AppProfileConfig.Applications))
+									for _, app := range goRule.AppProfileConfig.Applications {
+										cfg.Applications = append(cfg.Applications, AppRuleApplicationModel{Name: types.StringValue(app.Name)})
+									}
+								}
+								modelRule.AppProfileConfig = cfg
+							}
+							modelAppRules.DropRules = append(modelAppRules.DropRules, modelRule)
+						}
+					}
+					if len(modelAppRules.PassRules) > 0 || len(modelAppRules.DropRules) > 0 {
+						modelRuleSet.AppRules = modelAppRules
+					}
 				}
 				modelMap.RuleSets = append(modelMap.RuleSets, modelRuleSet)
 			}
