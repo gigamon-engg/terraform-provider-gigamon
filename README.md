@@ -27,7 +27,7 @@ Installation and Testing For developers
 
   - After any changes to the source
       go to the base directory of the repo i.e. to "fm_terraform_provider"
-      execute go install ./terraform-provider
+      execute go install .
       This will generate the binary and also install it in the directory pointed to by GOBIN
 
   - Using the new version and testing in TF modules

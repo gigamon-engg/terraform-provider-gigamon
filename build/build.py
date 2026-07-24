@@ -18,9 +18,9 @@ from zipfile import ZipFile, ZIP_DEFLATED
 # irrespective of the time when it was created etc.
 PERMANANT_VERSION = []
 
-ARTIFACT_DIR = "fm_terraform_provider/terraform-provider/artifacts"
-GPG_DIR = "fm_terraform_provider/terraform-provider/build/gpg_keys"
-BUILD_DIR = "fm_terraform_provider/terraform-provider/build"
+ARTIFACT_DIR = "fm_terraform_provider/artifacts"
+GPG_DIR = "fm_terraform_provider/build/gpg_keys"
+BUILD_DIR = "fm_terraform_provider/build"
 
 def get_file_from_components(os_type, arch_type, version):
     '''form the file name prefix for all components from the above fields'''

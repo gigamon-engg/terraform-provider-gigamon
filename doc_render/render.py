@@ -42,8 +42,8 @@ app = Flask(__name__)
 '''
 
 # location of the docs dir in our repo
-DOC_DIR = "fm_terraform_provider/terraform-provider/docs"
-ARTIFACT_DIR = "fm_terraform_provider/terraform-provider/artifacts"
+DOC_DIR = "fm_terraform_provider/docs"
+ARTIFACT_DIR = "fm_terraform_provider/artifacts"
 
 # This lists the resource types that we expose in the document. and also tracks any difference
 # in directory naming and view of that name we give to the customer. for e.g. data-sources is
