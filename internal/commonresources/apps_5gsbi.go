@@ -7,6 +7,7 @@ package commonresources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -362,7 +363,7 @@ func (r *App5GSBI) Create(ctx context.Context, req resource.CreateRequest, resp 
     }
 
     fmData := FM5GSBI{}
-    err = GetMSAppData(ctx, sessionID, id, "5G-SBI", "", &fmData, r.fmClient)
+    err = GetMSAppData(ctx, sessionID, id, app5GSBIName, "", &fmData, r.fmClient)
     if err != nil {
         tflog.Warn(ctx, fmt.Sprintf("Failed to fetch created 5G-SBI app: %v", err))
     } else {
@@ -397,9 +398,10 @@ func (r *App5GSBI) Read(ctx context.Context, req resource.ReadRequest, resp *res
     }
 
     fmData := FM5GSBI{}
-    err = GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
+    err = GetMSAppData(ctx, sessionID, rawID, app5GSBIName, "", &fmData, r.fmClient)
     if err != nil {
-        if strings.Contains(err.Error(), "not found") {
+        var fmErr *fmclient.FMErrors
+        if errors.As(err, &fmErr) && fmErr.ErrorCode() == fmclient.ObjectNotFound {
             resp.State.RemoveResource(ctx)
             return
         }
@@ -459,7 +461,7 @@ func (r *App5GSBI) Update(ctx context.Context, req resource.UpdateRequest, resp 
     }
 
     fmData := FM5GSBI{}
-    err = GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
+    err = GetMSAppData(ctx, sessionID, rawID, app5GSBIName, "", &fmData, r.fmClient)
     if err != nil {
         tflog.Warn(ctx, fmt.Sprintf("Failed to fetch updated 5G-SBI app: %v", err))
     } else {
@@ -528,7 +530,7 @@ func (r *App5GSBI) ImportState(ctx context.Context, req resource.ImportStateRequ
     rawID := parts[1]
 
     fmData := FM5GSBI{}
-    err := GetMSAppData(ctx, sessionID, rawID, "5G-SBI", "", &fmData, r.fmClient)
+    err := GetMSAppData(ctx, sessionID, rawID, app5GSBIName, "", &fmData, r.fmClient)
     if err != nil {
         resp.Diagnostics.AddError(
             "Error reading 5G-SBI app for import",
