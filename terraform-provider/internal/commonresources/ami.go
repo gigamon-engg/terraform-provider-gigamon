@@ -55,7 +55,14 @@ type AmiPrefixMatchModel struct {
 	PrefixMinMask types.String `tfsdk:"prefix_min_mask"`
 }
 
-type AmiIPMatchModel struct {
+type AmiIPv4MatchModel struct {
+	Destination *AmiPrefixMatchModel `tfsdk:"destination"`
+	Protocol    types.Bool           `tfsdk:"protocol"`
+	NextHeader  types.Bool           `tfsdk:"next_header"`
+	Source      *AmiPrefixMatchModel `tfsdk:"source"`
+}
+
+type AmiIPv6MatchModel struct {
 	Destination *AmiPrefixMatchModel `tfsdk:"destination"`
 	Protocol    types.Bool           `tfsdk:"protocol"`
 	NextHeader  types.Bool           `tfsdk:"next_header"`
@@ -86,8 +93,8 @@ type AmiCounterModel struct {
 }
 
 type AmiMatchModel struct {
-	Ipv4      *AmiIPMatchModel        `tfsdk:"ipv4"`
-	Ipv6      *AmiIPMatchModel        `tfsdk:"ipv6"`
+	Ipv4      *AmiIPv4MatchModel      `tfsdk:"ipv4"`
+	Ipv6      *AmiIPv6MatchModel      `tfsdk:"ipv6"`
 	Transport *AmiTransportMatchModel `tfsdk:"transport"`
 	Datalink  *AmiDatalinkMatchModel  `tfsdk:"datalink"`
 }
@@ -107,8 +114,8 @@ type AmiAppProfileConfigModel struct {
 	FamilyID      types.Bool              `tfsdk:"family_id"`
 	TagID         types.Bool              `tfsdk:"tag_id"`
 	Applications  []AmiApplicationModel   `tfsdk:"applications"`
-	Ipv4          *AmiIPMatchModel        `tfsdk:"ipv4"`
-	Ipv6          *AmiIPMatchModel        `tfsdk:"ipv6"`
+	Ipv4          *AmiIPv4MatchModel      `tfsdk:"ipv4"`
+	Ipv6          *AmiIPv6MatchModel      `tfsdk:"ipv6"`
 	Transport     *AmiTransportMatchModel `tfsdk:"transport"`
 	Counter       *AmiCounterModel        `tfsdk:"counter"`
 	Type          types.String            `tfsdk:"type"`
@@ -445,6 +452,35 @@ func validateAmiExporterConfigRules(data *AmiModel) error {
 	return nil
 }
 
+func validateAmiIPv4NextHeaderUnsupported(data *AmiModel) error {
+	if data == nil || data.AppMetadata == nil {
+		return nil
+	}
+
+	if data.AppMetadata.Match != nil && data.AppMetadata.Match.Ipv4 != nil {
+		if !data.AppMetadata.Match.Ipv4.NextHeader.IsNull() && !data.AppMetadata.Match.Ipv4.NextHeader.IsUnknown() {
+			return fmt.Errorf("app_metadata.match.ipv4.next_header is not supported; use app_metadata.match.ipv6.next_header")
+		}
+	}
+
+	for i, exporter := range data.AppMetadata.Exporters {
+		if exporter.ExporterConfig == nil {
+			continue
+		}
+
+		for j, apc := range exporter.ExporterConfig.AppProfileConfig {
+			if apc.Ipv4 == nil {
+				continue
+			}
+			if !apc.Ipv4.NextHeader.IsNull() && !apc.Ipv4.NextHeader.IsUnknown() {
+				return fmt.Errorf("app_metadata.exporters[%d].exporter_config.app_profile_config[%d].ipv4.next_header is not supported; use ipv6.next_header", i, j)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (a *Ami) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_ami"
 }
@@ -486,7 +522,7 @@ func (a *Ami) Schema(ctx context.Context, req resource.SchemaRequest, resp *reso
 					"match": schema.SingleNestedAttribute{
 						Optional: true,
 						Attributes: map[string]schema.Attribute{
-							"ipv4":      amiIPMatchSchema(),
+							"ipv4":      amiIPv4MatchSchema(),
 							"ipv6":      amiIPv6MatchSchema(),
 							"transport": amiTransportSchema(),
 							"datalink":  schema.SingleNestedAttribute{Optional: true, Attributes: map[string]schema.Attribute{"vlan": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)}}},
@@ -517,14 +553,14 @@ func amiPrefixSchema() schema.SingleNestedAttribute {
 	}
 }
 
-func amiIPMatchSchema() schema.SingleNestedAttribute {
+func amiIPv4MatchSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"destination": amiPrefixSchema(),
 			"protocol":    schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
-			"next_header": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 			"source":      amiPrefixSchema(),
+			"next_header": schema.BoolAttribute{Optional: true},
 		},
 	}
 }
@@ -597,7 +633,7 @@ func amiAppProfileConfigNestedObject() schema.NestedAttributeObject {
 			Optional:     true,
 			NestedObject: amiApplicationNestedObject(),
 		},
-		"ipv4":      amiIPMatchSchema(),
+		"ipv4":      amiIPv4MatchSchema(),
 		"ipv6":      amiIPv6MatchSchema(),
 		"transport": amiTransportSchema(),
 		"counter":   amiCounterSchema(),
@@ -690,6 +726,10 @@ func (a *Ami) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, re
 	if err := validateAmiExporterConfigRules(&data); err != nil {
 		resp.Diagnostics.AddError("Invalid AMI exporter configuration", err.Error())
 	}
+
+	if err := validateAmiIPv4NextHeaderUnsupported(&data); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI IPv4 configuration", err.Error())
+	}
 }
 
 func (a *Ami) getMonitoringSession(ctx context.Context, monitoringSessionID string) (*FMMonSess, error) {
@@ -734,7 +774,7 @@ func (a *Ami) validateMonitoringSessionPrereqs(ctx context.Context, monitoringSe
 	return nil
 }
 
-func buildFMAmiIPMatch(m *AmiIPMatchModel, isIPv6 bool) *fmAmiIPMatch {
+func buildFMAmiIPv4Match(m *AmiIPv4MatchModel) *fmAmiIPMatch {
 	if m == nil {
 		return nil
 	}
@@ -746,7 +786,25 @@ func buildFMAmiIPMatch(m *AmiIPMatchModel, isIPv6 bool) *fmAmiIPMatch {
 		v := m.Protocol.ValueBool()
 		fmMatch.Protocol = &v
 	}
-	if isIPv6 && !m.NextHeader.IsNull() && !m.NextHeader.IsUnknown() {
+	if m.Source != nil {
+		fmMatch.Source = &fmAmiPrefixMatch{PrefixMinMask: m.Source.PrefixMinMask.ValueString()}
+	}
+	return fmMatch
+}
+
+func buildFMAmiIPv6Match(m *AmiIPv6MatchModel) *fmAmiIPMatch {
+	if m == nil {
+		return nil
+	}
+	fmMatch := &fmAmiIPMatch{}
+	if m.Destination != nil {
+		fmMatch.Destination = &fmAmiPrefixMatch{PrefixMinMask: m.Destination.PrefixMinMask.ValueString()}
+	}
+	if !m.Protocol.IsNull() && !m.Protocol.IsUnknown() {
+		v := m.Protocol.ValueBool()
+		fmMatch.Protocol = &v
+	}
+	if !m.NextHeader.IsNull() && !m.NextHeader.IsUnknown() {
 		v := m.NextHeader.ValueBool()
 		fmMatch.NextHeader = &v
 	}
@@ -813,8 +871,8 @@ func appMetadataModelToAny(model *AmiAppMetadataModel) (any, error) {
 
 	if model.Match != nil {
 		fmModel.Match = &fmAmiMatch{
-			Ipv4: buildFMAmiIPMatch(model.Match.Ipv4, false),
-			Ipv6: buildFMAmiIPMatch(model.Match.Ipv6, true),
+			Ipv4: buildFMAmiIPv4Match(model.Match.Ipv4),
+			Ipv6: buildFMAmiIPv6Match(model.Match.Ipv6),
 		}
 		if model.Match.Transport != nil {
 			fmModel.Match.Transport = &fmAmiTransportMatch{}
@@ -851,8 +909,8 @@ func appMetadataModelToAny(model *AmiAppMetadataModel) (any, error) {
 						FamilyID:      apc.FamilyID.ValueBool(),
 						TagID:         apc.TagID.ValueBool(),
 						Applications:  fmAmiApplicationsFromModel(apc.Applications),
-						Ipv4:          buildFMAmiIPMatch(apc.Ipv4, false),
-						Ipv6:          buildFMAmiIPMatch(apc.Ipv6, true),
+						Ipv4:          buildFMAmiIPv4Match(apc.Ipv4),
+						Ipv6:          buildFMAmiIPv6Match(apc.Ipv6),
 						Type:          apc.Type.ValueString(),
 					}
 					if apc.Transport != nil {
@@ -902,11 +960,31 @@ func appMetadataModelToAny(model *AmiAppMetadataModel) (any, error) {
 	return fmModel, nil
 }
 
-func anyToAmiIPMatchModel(fmMatch *fmAmiIPMatch) *AmiIPMatchModel {
+func anyToAmiIPv4MatchModel(fmMatch *fmAmiIPMatch) *AmiIPv4MatchModel {
 	if fmMatch == nil {
 		return nil
 	}
-	m := &AmiIPMatchModel{Protocol: types.BoolNull(), NextHeader: types.BoolNull()}
+	m := &AmiIPv4MatchModel{Protocol: types.BoolNull(), NextHeader: types.BoolNull()}
+	if fmMatch.Destination != nil {
+		m.Destination = &AmiPrefixMatchModel{PrefixMinMask: types.StringValue(fmMatch.Destination.PrefixMinMask)}
+	}
+	if fmMatch.Protocol != nil {
+		m.Protocol = types.BoolValue(*fmMatch.Protocol)
+	}
+	if fmMatch.NextHeader != nil {
+		m.NextHeader = types.BoolValue(*fmMatch.NextHeader)
+	}
+	if fmMatch.Source != nil {
+		m.Source = &AmiPrefixMatchModel{PrefixMinMask: types.StringValue(fmMatch.Source.PrefixMinMask)}
+	}
+	return m
+}
+
+func anyToAmiIPv6MatchModel(fmMatch *fmAmiIPMatch) *AmiIPv6MatchModel {
+	if fmMatch == nil {
+		return nil
+	}
+	m := &AmiIPv6MatchModel{Protocol: types.BoolNull(), NextHeader: types.BoolNull()}
 	if fmMatch.Destination != nil {
 		m.Destination = &AmiPrefixMatchModel{PrefixMinMask: types.StringValue(fmMatch.Destination.PrefixMinMask)}
 	}
@@ -963,8 +1041,8 @@ func anyToAppMetadataModel(raw any) *AmiAppMetadataModel {
 
 	if fmModel.Match != nil {
 		model.Match = &AmiMatchModel{
-			Ipv4: anyToAmiIPMatchModel(fmModel.Match.Ipv4),
-			Ipv6: anyToAmiIPMatchModel(fmModel.Match.Ipv6),
+			Ipv4: anyToAmiIPv4MatchModel(fmModel.Match.Ipv4),
+			Ipv6: anyToAmiIPv6MatchModel(fmModel.Match.Ipv6),
 		}
 		if fmModel.Match.Transport != nil {
 			model.Match.Transport = &AmiTransportMatchModel{DstPort: types.BoolValue(fmModel.Match.Transport.DstPort), SrcPort: types.BoolValue(fmModel.Match.Transport.SrcPort)}
@@ -987,8 +1065,8 @@ func anyToAppMetadataModel(raw any) *AmiAppMetadataModel {
 					FamilyID:      types.BoolValue(apc.FamilyID),
 					TagID:         types.BoolValue(apc.TagID),
 					Applications:  modelApplicationsFromFm(apc.Applications),
-					Ipv4:          anyToAmiIPMatchModel(apc.Ipv4),
-					Ipv6:          anyToAmiIPMatchModel(apc.Ipv6),
+					Ipv4:          anyToAmiIPv4MatchModel(apc.Ipv4),
+					Ipv6:          anyToAmiIPv6MatchModel(apc.Ipv6),
 					Type:          types.StringValue(apc.Type),
 				}
 				if apc.Transport != nil {
@@ -1092,6 +1170,11 @@ func (a *Ami) Create(ctx context.Context, req resource.CreateRequest, resp *reso
 		return
 	}
 
+	if err := validateAmiIPv4NextHeaderUnsupported(&data); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI IPv4 configuration", err.Error())
+		return
+	}
+
 	fmData, err := a.buildFMAmi(&data)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to create AMI app", err.Error())
@@ -1175,6 +1258,11 @@ func (a *Ami) Update(ctx context.Context, req resource.UpdateRequest, resp *reso
 
 	if err := validateAmiExporterConfigRules(&planData); err != nil {
 		resp.Diagnostics.AddError("Invalid AMI exporter configuration", err.Error())
+		return
+	}
+
+	if err := validateAmiIPv4NextHeaderUnsupported(&planData); err != nil {
+		resp.Diagnostics.AddError("Invalid AMI IPv4 configuration", err.Error())
 		return
 	}
 
