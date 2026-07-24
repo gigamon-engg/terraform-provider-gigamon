@@ -95,7 +95,7 @@ function validate_arguments {
 # Given the version, os and arch sets up the artifact for this combination
 function build_artifact {
     # Build this combination first
-    if ! CGO_ENABLED="0" GOOS=$3 GOARCH=$4 go build $5 -ldflags "-X 'main.version=v$2'" ./terraform-provider; then
+    if ! CGO_ENABLED="0" GOOS=$3 GOARCH=$4 go build $5 -ldflags "-X 'main.version=v$2'" .; then
         echo "Unable to build for $3 and $4"
         exit 1
     fi
