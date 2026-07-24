@@ -90,6 +90,7 @@ func (tm *TrafficMap) ValidateConfig(
 	}
 
 	applyAndValidateAsfSessionFields(cfg.Asf, &resp.Diagnostics)
+	validateAppRulesRequireAsf(&cfg, &resp.Diagnostics)
 }
 
 // Initial Configure call, to initialize the Provider
@@ -130,6 +131,10 @@ func (tm *TrafficMap) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 	applyAndValidateAsfSessionFields(data.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	validateAppRulesRequireAsf(&data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -235,6 +240,10 @@ func (tm *TrafficMap) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 	applyAndValidateAsfSessionFields(planData.Asf, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	validateAppRulesRequireAsf(&planData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -572,6 +581,32 @@ func validateNilPassRules(ruleSets []RuleSetModel, diags *diag.Diagnostics) {
 					"Remove pass_rules from this rule_set.",
 			)
 		}
+	}
+}
+
+func validateAppRulesRequireAsf(data *MapModel, diags *diag.Diagnostics) {
+	if data == nil {
+		return
+	}
+
+	hasAsf := data.Asf != nil && data.Asf.AsfProfileConfig != nil
+	if hasAsf {
+		return
+	}
+
+	for i, rs := range data.RuleSets {
+		if rs.AppRules == nil {
+			continue
+		}
+		if len(rs.AppRules.PassRules) == 0 && len(rs.AppRules.DropRules) == 0 {
+			continue
+		}
+
+		diags.AddAttributeError(
+			path.Root("rule_sets").AtListIndex(i).AtName("app_rules"),
+			"app_rules require ASF",
+			"rule_sets.app_rules is supported only when asf.asf_profile_config is configured on the traffic map.",
+		)
 	}
 }
 
