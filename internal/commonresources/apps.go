@@ -3199,6 +3199,8 @@ func (a *Amx) Schema(ctx context.Context, req resource.SchemaRequest, resp *reso
 									ElementType:         types.StringType,
 									MarkdownDescription: "HTTP headers to send (e.g. Authorization: Bearer ...).",
 									Optional:            true,
+									Sensitive:           true,
+									WriteOnly:           true,
 									Validators: []validator.List{
 										listvalidator.SizeAtLeast(1),
 									},
@@ -3512,6 +3514,7 @@ func workloadPlatformBlock(desc string) schema.ListNestedBlock {
 											MarkdownDescription: "Property value (plain text; used when file is not specified). For AKS workload, provide kubeconfig content in file and/or value for key = \"k8s_kubeconfig\".",
 											Optional:            true,
 											Sensitive:           true,
+											WriteOnly:           true,
 										},
 									},
 								},
@@ -4230,14 +4233,86 @@ func validateAksSources(ctx context.Context, we *AmxWorkloadEnrichmentModel) err
 	return nil
 }
 
+func copyAMXWriteOnlyFromConfig(planData *AmxModel, cfgData *AmxModel) {
+	if planData == nil || cfgData == nil {
+		return
+	}
+
+	// Headers are write-only/sensitive. Copy from config so create/update can still send them to FM.
+	if planData.Exporter != nil && cfgData.Exporter != nil {
+		cfgHeadersByName := make(map[string]types.List, len(cfgData.Exporter.HttpExport))
+		for _, cfgHE := range cfgData.Exporter.HttpExport {
+			cfgHeadersByName[cfgHE.Name.ValueString()] = cfgHE.Headers
+		}
+
+		for i, planHE := range planData.Exporter.HttpExport {
+			if headers, ok := cfgHeadersByName[planHE.Name.ValueString()]; ok {
+				planData.Exporter.HttpExport[i].Headers = headers
+			}
+		}
+	}
+
+	copyPlatformWriteOnlyValues := func(planPlatforms []AmxWorkloadPlatformModel, cfgPlatforms []AmxWorkloadPlatformModel) {
+		cfgPlatformByName := make(map[string]AmxWorkloadPlatformModel, len(cfgPlatforms))
+		for _, cfgPlatform := range cfgPlatforms {
+			cfgPlatformByName[cfgPlatform.Name.ValueString()] = cfgPlatform
+		}
+
+		for pIdx, planPlatform := range planPlatforms {
+			cfgPlatform, ok := cfgPlatformByName[planPlatform.Name.ValueString()]
+			if !ok {
+				continue
+			}
+
+			cfgSourceByName := make(map[string]AmxSourceInfoModel, len(cfgPlatform.Sources))
+			for _, cfgSource := range cfgPlatform.Sources {
+				cfgSourceByName[cfgSource.Name.ValueString()] = cfgSource
+			}
+
+			for sIdx, planSource := range planPlatforms[pIdx].Sources {
+				cfgSource, ok := cfgSourceByName[planSource.Name.ValueString()]
+				if !ok {
+					continue
+				}
+
+				cfgSettingByKey := make(map[string]AmxSourceSettingModel, len(cfgSource.SourceSettings))
+				for _, cfgSetting := range cfgSource.SourceSettings {
+					cfgSettingByKey[cfgSetting.Key.ValueString()] = cfgSetting
+				}
+
+				for setIdx, planSetting := range planPlatforms[pIdx].Sources[sIdx].SourceSettings {
+					cfgSetting, ok := cfgSettingByKey[planSetting.Key.ValueString()]
+					if !ok {
+						continue
+					}
+					planPlatforms[pIdx].Sources[sIdx].SourceSettings[setIdx].Value = cfgSetting.Value
+				}
+			}
+		}
+	}
+
+	for i := range planData.WorkloadEnrichment {
+		if i >= len(cfgData.WorkloadEnrichment) {
+			break
+		}
+		copyPlatformWriteOnlyValues(planData.WorkloadEnrichment[i].Aws, cfgData.WorkloadEnrichment[i].Aws)
+		copyPlatformWriteOnlyValues(planData.WorkloadEnrichment[i].Azure, cfgData.WorkloadEnrichment[i].Azure)
+		copyPlatformWriteOnlyValues(planData.WorkloadEnrichment[i].VmwareVcenter, cfgData.WorkloadEnrichment[i].VmwareVcenter)
+		copyPlatformWriteOnlyValues(planData.WorkloadEnrichment[i].Aks, cfgData.WorkloadEnrichment[i].Aks)
+	}
+}
+
 // Create call for new AMX App Instance
 func (a *Amx) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data AmxModel
+	var data, cfgData AmxModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfgData)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	copyAMXWriteOnlyFromConfig(&data, &cfgData)
 
 	if err := a.validateAmxPlan(ctx, &data); err != nil {
 		resp.Diagnostics.AddError(
@@ -4343,8 +4418,7 @@ func (a *Amx) Read(ctx context.Context, req resource.ReadRequest, resp *resource
 				continue
 			}
 
-			// FM may not faithfully return these secure/write-only fields
-			data.Exporter.HttpExport[i].Headers = oldHE.Headers
+			// FM may not faithfully return this secure field
 			data.Exporter.HttpExport[i].SecureKeys = oldHE.SecureKeys
 
 			// Preserve endpoint only when FM returns a masked value
@@ -4361,12 +4435,15 @@ func (a *Amx) Read(ctx context.Context, req resource.ReadRequest, resp *resource
 }
 
 func (a *Amx) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var planData AmxModel
+	var planData, cfgData AmxModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &planData)...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfgData)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	copyAMXWriteOnlyFromConfig(&planData, &cfgData)
 
 	if err := a.validateAmxPlan(ctx, &planData); err != nil {
 		resp.Diagnostics.AddError(

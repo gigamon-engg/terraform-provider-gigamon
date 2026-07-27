@@ -254,12 +254,14 @@ func (c *EsxiConnection) Create(ctx context.Context, req resource.CreateRequest,
 		ResourceAllocation:  data.ResourceAllocation.ValueString(),
 		MaximumNodesPerHost: data.MaximumNodesPerHost.ValueInt32(),
 	}
+	redactedConnection := fmConnection
+	redactedConnection.Password = "<redacted>"
 
 	jsonData, err := json.Marshal(fmConnection)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to convert struct to JSON",
-			fmt.Sprintf("converting: %v error is: %v", fmConnection, err),
+			fmt.Sprintf("converting: %v error is: %v", redactedConnection, err),
 		)
 		return
 	}
@@ -279,7 +281,7 @@ func (c *EsxiConnection) Create(ctx context.Context, req resource.CreateRequest,
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create the connection",
-			fmt.Sprintf("Connection Creaet: %v error is: %v", fmConnection, err),
+			fmt.Sprintf("Connection Creaet: %v error is: %v", redactedConnection, err),
 		)
 		return
 	}

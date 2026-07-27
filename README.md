@@ -53,6 +53,19 @@ Run the convert_md_html.py and it will traverse the doc directory and convert al
 
 Copy these to the /var/www directory and will get rendered properly.
 
+Resource Security Checks (for developers)
+-----------------------------------------
+When adding or updating resources/data sources, use the security checklist at
+docs/resource_security_checklist.md.
+
+Run the lightweight lint from repo root:
+
+  bash tools/security_lint.sh
+
+You can also scan specific files:
+
+  bash tools/security_lint.sh internal/commonresources/apps.go
+
 Examples and Usages
 -------------------
 

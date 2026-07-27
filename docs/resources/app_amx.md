@@ -513,7 +513,7 @@ http_export {
   data_type              = string (optional, default "ami", one of: "ami", "mobility", "ami_enriched", "netflow")
   endpoint               = string (required)
   secure_endpoint        = bool   (optional)
-  headers                = [string] (optional)
+  headers                = [string] (optional, write-only, sensitive)
   secure_keys            = [string] (optional)
   bind_ip_address        = string  (optional)
   # format             = read-only (always "json"; not user-configurable)
@@ -549,9 +549,9 @@ http_export {
 - **`secure_endpoint`** (Boolean)  
   Whether the configured endpoint should be treated as a secure endpoint by AMX. Maps to FM `maskEndpointApiKey`: when set to `true`, FM masks the endpoint API key in responses and treats the endpoint as sensitive. Optional; default **false**.
 
-- **`headers`** (List of String)  
+- **`headers`** (List of String, write-only, Sensitive)  
   HTTP headers to send, e.g. `["Authorization: Bearer ..."]`.  
-  Optional; persisted as write-only/sensitive‑like: FM does **not** return them, but the provider attempts to preserve them in state across reads.
+  Optional. This value is never written to Terraform state and is not available in outputs.
 
 - **`secure_keys`** (List of String)  
   Names of headers/fields that should be treated as secure keys on AMX side.  
@@ -727,7 +727,7 @@ aws {
       secure = bool   (optional, default true)
       file   = string (optional)
       key    = string (required)
-      value  = string (optional, sensitive)
+      value  = string (optional, write-only, sensitive)
     }
   }
 }
@@ -764,7 +764,7 @@ For each platform:
   - **`key`** (String, required)  
     Property key, e.g. `aws_access_key_id`, `azure_client_id`, `k8s_kubeconfig`.
 
-  - **`value`** (String, optional, Sensitive)  
+  - **`value`** (String, optional, write-only, Sensitive)  
     Plain property value when `file` is not used.
 
 **Constraints:**
@@ -824,7 +824,8 @@ In addition to the arguments above, `gigamon_app_amx` exports:
 
 **Special behavior:**
 
-- For `exporter.http_export.headers` and `secure_keys`, FM does **not** echo these values. The provider **preserves** them by copying from previous state back into new state during `Read`, keyed on export `name`. This avoids constant drift for write-only fields.
+- `exporter.http_export.headers` and workload `source.setting.value` are write-only and sensitive. They are sent to FM during create/update and are never stored in Terraform state or outputs.
+- `exporter.http_export.secure_keys` is not write-only, but FM may not always echo it consistently; provider behavior keeps it stable to avoid unnecessary drift.
 
 - For enrichment blocks, FM may not echo all fine-grained fields. The provider currently treats Terraform config/state as the source of truth and does **not** attempt full round-trip mapping for all enrichment internals. This avoids unnecessary churn when FM omits or normalizes fields.
 
@@ -882,7 +883,52 @@ In addition to the arguments above, `gigamon_app_amx` exports:
   5. Uses `updateTFStruct` to overlay FM-owned fields into Terraform state:
      - Updates `alias`, `ingestor`, `exporter` (CloudUpload & Kafka).
      - Leaves enrichment blocks largely state‑driven to avoid churn where FM does not echo exact user input.
-  6. Specifically restores `headers` and `secure_keys` from old state into new state for matching `http_export.name` entries.
+  6. `headers` and workload `source.setting.value` are write-only and therefore not restored from state. For matching `http_export.name` entries, `secure_keys` is retained when FM does not echo it.
+
+### Rotating write-only AMX secrets
+
+Because `exporter.http_export.headers` and workload `source.setting.value` are write-only, Terraform cannot diff their old/new values from state.
+
+Use this pattern when rotating secrets:
+
+1. Change the secret value.
+2. Also change a non-secret companion field so Terraform produces an update plan.
+
+Recommended companion fields:
+
+- `exporter.http_export.labels["secret_revision"]`
+- `workload_enrichment.<platform>.settings["credential_revision"]`
+
+Example:
+
+```hcl
+resource "gigamon_app_amx" "amx" {
+  alias                 = "amx-ogw"
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+
+  ingestor {
+    name = "ami_ingestor"
+    port = 4739
+    type = "ami"
+  }
+
+  exporter {
+    http_export {
+      name      = "grafana"
+      endpoint  = "https://grafana.example/api/amx"
+      data_type = "ami_enriched"
+
+      headers = [
+        "Authorization: Bearer ${var.grafana_token}",
+      ]
+
+      labels = {
+        secret_revision = "2"
+      }
+    }
+  }
+}
+```
 
 ### Update
 

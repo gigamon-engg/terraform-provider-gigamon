@@ -15,7 +15,7 @@ from collections import defaultdict
 import argparse
 import tempfile
 import json
-from flask import Flask, request, render_template, make_response, redirect, jsonify, send_file
+from flask import Flask, request, render_template, make_response, redirect, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 import markdown
 
@@ -53,6 +53,8 @@ SUPPORTED_RESOURCE_TYPES = [
     ("data-sources", "datasources"),
     ("actions", "action"),
 ]
+
+SUPPORTED_ROUTE_RESOURCE_TYPES = {res_type[1] for res_type in SUPPORTED_RESOURCE_TYPES}
 
 MAP_RES_TYPE_TO_DIR = {
     "datasources": "data-sources",
@@ -167,7 +169,11 @@ def render_page(md_file):
     '''
 
     # Convert the given md file into html content
-    html_content = get_html_for_md(os.path.join(args.base_dir, DOC_DIR, md_file))
+    md_path = os.path.join(args.base_dir, DOC_DIR, md_file)
+    if not os.path.isfile(md_path):
+        abort(404)
+
+    html_content = get_html_for_md(md_path)
 
     if request.cookies.get('visited') is None:
         # Need to redner the navigation pane. Get the detaisl
@@ -205,6 +211,15 @@ def home():
 def res_content(platform, res_type, res_file):
     '''This is the path called when the user clicks on any of the left navigation items'''
     _ = platform
+
+    # Only allow supported doc categories and markdown files in this generic route.
+    # This prevents non-doc endpoints from being interpreted as doc paths.
+    if res_type not in SUPPORTED_ROUTE_RESOURCE_TYPES:
+        abort(404)
+
+    if not res_file.endswith('.md'):
+        abort(404)
+
     md_file = os.path.join(MAP_RES_TYPE_TO_DIR.get(res_type,res_type), res_file)
     return render_page(md_file)
 
