@@ -7,6 +7,7 @@ package commonresources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -211,7 +212,12 @@ func (r *AppPCapNG) Read(ctx context.Context, req resource.ReadRequest, resp *re
 	fmData := FMPCapNG{}
 	err = GetMSAppData(ctx, sessionID, rawID, "pcapng", "", &fmData, r.fmClient)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		var fmErr *fmclient.FMErrors
+		if errors.As(err, &fmErr) && fmErr.ErrorCode() == fmclient.ObjectNotFound {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
 			resp.State.RemoveResource(ctx)
 			return
 		}
