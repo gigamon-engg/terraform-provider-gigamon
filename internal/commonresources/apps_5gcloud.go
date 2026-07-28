@@ -266,6 +266,39 @@ func (r *App5GCloud) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp.TypeName = req.ProviderTypeName + "_app_5gcloud"
 }
 
+// modeImmutablePlanModifier is a custom plan modifier that prevents changes to the mode field after creation
+type modeImmutablePlanModifier struct{}
+
+// Description returns a plain text description of the plan modifier's behavior.
+func (m modeImmutablePlanModifier) Description(ctx context.Context) string {
+	return "mode cannot be changed once the app is configured"
+}
+
+// MarkdownDescription returns a markdown formatted description of the plan modifier's behavior.
+func (m modeImmutablePlanModifier) MarkdownDescription(ctx context.Context) string {
+	return "mode cannot be changed once the app is configured"
+}
+
+// PlanModifyString implements the plan modification logic.
+func (m modeImmutablePlanModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	// Do nothing if this is a new resource
+	if req.StateValue.IsNull() {
+		return
+	}
+
+	// Do nothing if the plan value equals the state value
+	if req.PlanValue.Equal(req.StateValue) {
+		return
+	}
+
+	// If the mode is changing, add an error
+	resp.Diagnostics.AddAttributeError(
+		req.Path,
+		"Mode Cannot Be Changed",
+		fmt.Sprintf("mode cannot be changed once the app is configured. Previous value: %s, new value: %s", req.StateValue.ValueString(), req.PlanValue.ValueString()),
+	)
+}
+
 // Schema defines the resource schema
 func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
@@ -286,23 +319,6 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"mode": schema.StringAttribute{
-				Description: "5G Cloud operating mode.",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.OneOf(
-						"casaVtap",
-						"oracleSCP",
-						"nokiaSCPInbound",
-						"nokiaSCPIn-Outbound",
-						"SBINF",
-						"ericssonSCPOutbound",
-						"ericssonSCPIn-Outbound",
-						"nokiaHEP3Inbound",
-						"nokiaHEP3IMS",
-					),
 				},
 			},
 			"rx_tunnel": schema.ListNestedAttribute{
@@ -505,6 +521,26 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					int64validator.Between(0, 5),
 				},
 			},
+			"mode": schema.StringAttribute{
+				Description: "5G Cloud operating mode. Cannot be changed after creation.",
+				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"casaVtap",
+						"oracleSCP",
+						"nokiaSCPInbound",
+						"nokiaSCPIn-Outbound",
+						"SBINF",
+						"ericssonSCPOutbound",
+						"ericssonSCPIn-Outbound",
+						"nokiaHEP3Inbound",
+						"nokiaHEP3IMS",
+					),
+				},
+				PlanModifiers: []planmodifier.String{
+					modeImmutablePlanModifier{},
+				},
+			},
 			"alias": schema.StringAttribute{
 				Description: "Alias for the 5G Cloud application.",
 				Required:    true,
@@ -517,7 +553,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 	}
 }
 
-// Configure configures the resource with provider client
+// Configure is called when the provider has been configured.
 func (r *App5GCloud) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
