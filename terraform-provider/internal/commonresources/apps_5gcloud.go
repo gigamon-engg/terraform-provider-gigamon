@@ -545,7 +545,13 @@ func (r *App5GCloud) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
-	validate5GCloudConfig(ctx, data, &resp.Diagnostics)
+	var configData App5GCloudModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &configData)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validate5GCloudConfig(ctx, data, &configData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -645,7 +651,13 @@ func (r *App5GCloud) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	validate5GCloudConfig(ctx, planData, &resp.Diagnostics)
+	var configData App5GCloudModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &configData)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validate5GCloudConfig(ctx, planData, &configData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -1297,7 +1309,7 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 	return model
 }
 
-func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *diag.Diagnostics) {
+func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, configModel *App5GCloudModel, diags *diag.Diagnostics) {
 	mode := model.Mode.ValueString()
 
 	if !model.RxTunnel.IsNull() && !model.RxTunnel.IsUnknown() {
@@ -1442,10 +1454,15 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 			}
 		}
 		if mode != "nokiaSCPInbound" {
-			if !scp.NokiaInboundReplaceAuthority.IsNull() && !scp.NokiaInboundReplaceAuthority.IsUnknown() && scp.NokiaInboundReplaceAuthority.ValueBool() {
+			nokiaInboundConfigured := scp
+			if configModel != nil && !configModel.ScpConfig.IsNull() && !configModel.ScpConfig.IsUnknown() {
+				_ = configModel.ScpConfig.As(ctx, &nokiaInboundConfigured, basetypes.ObjectAsOptions{})
+			}
+
+			if !nokiaInboundConfigured.NokiaInboundReplaceAuthority.IsNull() && !nokiaInboundConfigured.NokiaInboundReplaceAuthority.IsUnknown() {
 				diags.AddError("Invalid scp_config.nokia_inbound_replace_authority", fmt.Sprintf("nokia_inbound_replace_authority is only configurable when mode is nokiaSCPInbound, got %s", mode))
 			}
-			if !scp.NokiaInboundUse3gppTargetApiRoot.IsNull() && !scp.NokiaInboundUse3gppTargetApiRoot.IsUnknown() && scp.NokiaInboundUse3gppTargetApiRoot.ValueBool() {
+			if !nokiaInboundConfigured.NokiaInboundUse3gppTargetApiRoot.IsNull() && !nokiaInboundConfigured.NokiaInboundUse3gppTargetApiRoot.IsUnknown() {
 				diags.AddError("Invalid scp_config.nokia_inbound_use_3gpp_target_api_root", fmt.Sprintf("nokia_inbound_use_3gpp_target_api_root is only configurable when mode is nokiaSCPInbound, got %s", mode))
 			}
 		}
