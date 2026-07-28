@@ -1356,6 +1356,11 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, configMod
 			return
 		}
 
+		txConfigured := tx
+		if configModel != nil && !configModel.TxTunnel.IsNull() && !configModel.TxTunnel.IsUnknown() {
+			_ = configModel.TxTunnel.As(ctx, &txConfigured, basetypes.ObjectAsOptions{})
+		}
+
 		allowedTxTypes := []string{"vxlan", "l2gre"}
 		if mode == "casaVtap" {
 			allowedTxTypes = []string{"vxlan", "l2gre", "udpgre"}
@@ -1365,12 +1370,18 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, configMod
 		}
 		switch tx.TxType.ValueString() {
 		case "vxlan":
+			if !txConfigured.L2GreKey.IsNull() && !txConfigured.L2GreKey.IsUnknown() {
+				diags.AddError("Invalid tx_tunnel.l2gre_key", "tx_tunnel.l2gre_key is not configurable when tx_tunnel.tx_type is vxlan")
+			}
 			if mode == "casaVtap" || mode == "oracleSCP" {
 				if tx.TxVNIId.IsNull() || tx.TxVNIId.IsUnknown() || tx.TxVNIId.ValueInt64() == 0 {
 					diags.AddError("Missing tx_tunnel.tx_vni_id", fmt.Sprintf("tx_tunnel.tx_vni_id is required when mode is %s and tx_type is vxlan", mode))
 				}
 			}
 		case "l2gre":
+			if !txConfigured.TxVNIId.IsNull() && !txConfigured.TxVNIId.IsUnknown() {
+				diags.AddError("Invalid tx_tunnel.tx_vni_id", "tx_tunnel.tx_vni_id is not configurable when tx_tunnel.tx_type is l2gre")
+			}
 			if mode == "casaVtap" || mode == "oracleSCP" {
 				if tx.L2GreKey.IsNull() || tx.L2GreKey.IsUnknown() || tx.L2GreKey.ValueInt64() == 0 {
 					diags.AddError("Missing tx_tunnel.l2gre_key", fmt.Sprintf("tx_tunnel.l2gre_key is required when mode is %s and tx_type is l2gre", mode))
