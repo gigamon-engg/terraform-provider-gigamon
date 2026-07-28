@@ -115,6 +115,7 @@ type TxTunnelModel struct {
 type Http2MonitoredFlowsModel struct {
 	NumMonitoredStreamFlows types.Int64 `tfsdk:"num_monitored_stream_flows"`
 	Http2RequestTimeout     types.Int64 `tfsdk:"http2_request_timeout"`
+	Http2ResponseTimeout    types.Int64 `tfsdk:"http2_response_timeout"`
 }
 
 type TcpMonitoredFlowsModel struct {
@@ -187,6 +188,7 @@ var txTunnelAttrTypes = map[string]attr.Type{
 var http2MonitoredFlowsAttrTypes = map[string]attr.Type{
 	"num_monitored_stream_flows": types.Int64Type,
 	"http2_request_timeout":      types.Int64Type,
+	"http2_response_timeout":     types.Int64Type,
 }
 
 var tcpMonitoredFlowsAttrTypes = map[string]attr.Type{
@@ -435,7 +437,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					"csv_logging_log_level":                  schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("all", "flow", "message", "transaction", "none")}},
 					"num_scp_processing_threads":             schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(8), Validators: []validator.Int64{int64validator.Between(1, 16)}},
 					"num_tcp_flow_client_port_per_thread":    schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(1000), Validators: []validator.Int64{int64validator.Between(100, 8000)}},
-					"tcp_server_ports":                      schema.Int64Attribute{Optional: true, Validators: []validator.Int64{int64validator.Between(1, 65535)}},
+					"tcp_server_ports":                       schema.Int64Attribute{Optional: true, Validators: []validator.Int64{int64validator.Between(1, 65535)}},
 					"nokia_inbound_use_3gpp_target_api_root": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
 					"nokia_inbound_replace_authority":        schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
 					"http2_monitored_flows": schema.SingleNestedAttribute{
@@ -443,6 +445,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 						Attributes: map[string]schema.Attribute{
 							"num_monitored_stream_flows": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(1024), Validators: []validator.Int64{int64validator.Between(1024, 16384)}},
 							"http2_request_timeout":      schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(15), Validators: []validator.Int64{int64validator.Between(1, 300)}},
+							"http2_response_timeout":     schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(2), Validators: []validator.Int64{int64validator.Between(1, 300)}},
 						},
 					},
 					"tcp_monitored_flows": schema.SingleNestedAttribute{
@@ -876,6 +879,7 @@ func buildFM5GCloudPayload(ctx context.Context, model App5GCloudModel) map[strin
 			http2Map := map[string]interface{}{}
 			setInt64ConfigValue(http2Map, "numMonitoredStreamFlows", http2.NumMonitoredStreamFlows)
 			setInt64ConfigValue(http2Map, "http2RequestTimeout", http2.Http2RequestTimeout)
+			setInt64ConfigValue(http2Map, "http2ResponseTimeout", http2.Http2ResponseTimeout)
 			scpMap["http2MonitoredFlows"] = http2Map
 		}
 
@@ -1189,12 +1193,16 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 			http2 := Http2MonitoredFlowsModel{
 				NumMonitoredStreamFlows: types.Int64Value(1024),
 				Http2RequestTimeout:     types.Int64Value(15),
+				Http2ResponseTimeout:    types.Int64Value(2),
 			}
 			if v, ok := rawHTTP2["numMonitoredStreamFlows"]; ok {
 				http2.NumMonitoredStreamFlows = toInt64Value(v)
 			}
 			if v, ok := rawHTTP2["http2RequestTimeout"]; ok {
 				http2.Http2RequestTimeout = toInt64Value(v)
+				if v, ok := rawHTTP2["http2ResponseTimeout"]; ok {
+					http2.Http2ResponseTimeout = toInt64Value(v)
+				}
 			}
 			http2Obj, _ := types.ObjectValueFrom(ctx, http2MonitoredFlowsAttrTypes, http2)
 			scp.Http2MonitoredFlows = http2Obj
