@@ -25,64 +25,66 @@ locals {
 
 resource "gigamon_app_5gcloud" "minimal" {
   monitoring_session_id = local.monitoring_session_id
-  mode = "nokiaHEP3Inbound"
+
+  mode = "ericssonSCPOutbound"
 
   rx_tunnel = [
     {
-      rx_type          = "tcp"
-      listen_ipaddress = "1.1.1.1"
-      listen_port      = 1
-      from_port        = 1
+      rx_type          = "vxlan"
+      listen_ipaddress = "1.1.1.10"
+      listen_port      = 2
+      from_port        = 3
+      rx_vni_id        = 4
+      rx_thread        = 5
     }
   ]
 
   tx_tunnel = {
-    tx_type             = "vxlan"
-    tx_remote_ipaddress = "2.2.2.2"
+    tx_type             = "l2gre"
+    tx_remote_ipaddress = "2.2.2.28"
     tx_src_ipaddress    = "3.3.3.3"
-    tx_src_port         = 3
-    tx_dst_port         = 2
-    tx_vni_id           = 0
+    tx_src_port         = 7
+    tx_dst_port         = 6
+    l2gre_key           = 8
   }
 
   scp_config = {
     num_tcp_flows                       = 1024
     num_transaction_flows               = 2048
     tcp_flow_timeout                    = 900
-    scp_transaction_timeout             = 10
+    scp_transaction_timeout             = 11
     header_index                        = false
     header_compression_code             = false
     nrf_discovery_enabled               = true
     add_gigamon_header                  = false
+    nf_instance_alias                   = "5gc-fn"
     fqdn_alias                          = "5gc-fqdn"
-    min_tcp_flow_client_port            = 32768
+    ua_alias                            = "5gc-ua"
+    min_tcp_flow_client_port            = 32765
     max_tcp_flow_client_port            = 36863
     packet_capture_log_level            = "none"
     csv_logging_log_level               = "none"
     num_scp_processing_threads          = 8
     num_tcp_flow_client_port_per_thread = 1000
-    tcp_server_ports                    = 1
+    tcp_server_ports                    = 80
 
-  }
+    http2_monitored_flows = {
+      num_monitored_stream_flows = 1024
+      http2_request_timeout      = 15
+      http2_response_timeout     = 30
+    }
 
-  hep3_config = {
-    num_ingress_tcpconn        = 1024
-    num_egress_tcp_flows       = 4096
-    egress_tcp_flow_timeout    = 900
-    num_receive_thread         = 8
-    mtls                       = "disable"
-    hep3_timestamp             = false
-    recv_timestamp             = false
-    mtls_key_alias             = ""
-    num_egress_sctp_flows      = 1024
-    egress_sctp_flow_timeout   = 900
-    service_map_table_alias    = "5g-servicemap"
+    tcp_monitored_flows = {
+      num_monitored_tcp_flows   = 2048
+      tcp_flow_timeout          = 60
+      tcp_flow_reassembly_timeout = 500
+    }
   }
 
   tool_mtu         = 8800
   log_folder_loc   = "/var/log"
   tunnel_log_level = 2
-  alias            = "cloud5g"
+  alias            = "cloud5g_11"
 
 
 
