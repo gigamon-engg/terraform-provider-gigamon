@@ -62,6 +62,329 @@ resource "gigamon_app_5gcloud" "app" {
 }
 ```
 
+### Mode-based 5G Cloud configurations
+
+The following examples show common deployment modes for `gigamon_app_5gcloud`.
+
+### Casa Systems vTAP mode
+
+```hcl
+resource "gigamon_app_5gcloud" "casa_vtap" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "casa_vtap_app"
+  mode                  = "casaVtap"
+
+  rx_tunnel = [{
+    rx_type          = "vxlan"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    from_port        = 49001
+    rx_vni_id        = 110
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "udpgre"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
+### Ericsson SCP mode
+
+```hcl
+resource "gigamon_app_5gcloud" "ericsson_scp_outbound" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "ericsson_scp_outbound_app"
+  mode                  = "ericssonSCPOutbound"
+
+  rx_tunnel = [{
+    rx_type          = "vxlan"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    from_port        = 49001
+    rx_vni_id        = 110
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "vxlan"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  scp_config = {
+    num_tcp_flows                       = 1024
+    num_transaction_flows               = 2048
+    tcp_flow_timeout                    = 900
+    scp_transaction_timeout             = 10
+    header_index                        = true
+    header_compression_code             = false
+    nrf_discovery_enabled               = true
+    add_gigamon_header                  = true
+    nf_instance_alias                   = "5g_cloud_network_function"
+    fqdn_alias                          = "5g-apps"
+    ua_alias                            = "user_agent_csv"
+    min_tcp_flow_client_port            = 32768
+    max_tcp_flow_client_port            = 36863
+    packet_capture_log_level            = "receive"
+    csv_logging_log_level               = "none"
+    num_scp_processing_threads          = 16
+    num_tcp_flow_client_port_per_thread = 1000
+    tcp_server_ports                    = 443
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
+### Oracle SCP mode
+
+```hcl
+resource "gigamon_app_5gcloud" "oracle_scp" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "oracle_scp_app"
+  mode                  = "oracleSCP"
+
+  rx_tunnel = [{
+    rx_type          = "vxlan"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    from_port        = 49001
+    rx_vni_id        = 110
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "vxlan"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  scp_config = {
+    num_tcp_flows                       = 1024
+    num_transaction_flows               = 2048
+    tcp_flow_timeout                    = 900
+    scp_transaction_timeout             = 10
+    header_index                        = true
+    header_compression_code             = false
+    nrf_discovery_enabled               = true
+    add_gigamon_header                  = true
+    nf_instance_alias                   = "5g_cloud_network_function"
+    fqdn_alias                          = "5g-apps"
+    ua_alias                            = "user_agent_csv"
+    min_tcp_flow_client_port            = 32768
+    max_tcp_flow_client_port            = 36863
+    packet_capture_log_level            = "receive"
+    csv_logging_log_level               = "none"
+    num_scp_processing_threads          = 16
+    num_tcp_flow_client_port_per_thread = 1000
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
+### Nokia SCP mode
+
+```hcl
+resource "gigamon_app_5gcloud" "nokia_scp_inbound" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "nokia_scp_inbound_app"
+  mode                  = "nokiaSCPInbound"
+
+  rx_tunnel = [{
+    rx_type          = "vxlan"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    from_port        = 49001
+    rx_vni_id        = 110
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "vxlan"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  scp_config = {
+    num_tcp_flows                       = 1024
+    num_transaction_flows               = 2048
+    tcp_flow_timeout                    = 900
+    scp_transaction_timeout             = 10
+    header_index                        = true
+    header_compression_code             = false
+    nrf_discovery_enabled               = true
+    add_gigamon_header                  = true
+    nf_instance_alias                   = "5g_cloud_network_function"
+    fqdn_alias                          = "5g-apps"
+    ua_alias                            = "user_agent_csv"
+    min_tcp_flow_client_port            = 32768
+    max_tcp_flow_client_port            = 36863
+    packet_capture_log_level            = "receive"
+    csv_logging_log_level               = "none"
+    num_scp_processing_threads          = 16
+    num_tcp_flow_client_port_per_thread = 1000
+    nokia_inbound_use_3gpp_target_api_root = true
+    nokia_inbound_replace_authority        = true
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
+### Nokia CMM mode
+
+```hcl
+resource "gigamon_app_5gcloud" "nokia_hep3_inbound" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "nokia_hep3_inbound_app"
+  mode                  = "nokiaHEP3Inbound"
+
+  rx_tunnel = [{
+    rx_type          = "tcp"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "vxlan"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  scp_config = {
+    num_tcp_flows                       = 1024
+    num_transaction_flows               = 2048
+    tcp_flow_timeout                    = 900
+    scp_transaction_timeout             = 10
+    header_index                        = true
+    header_compression_code             = false
+    nrf_discovery_enabled               = true
+    add_gigamon_header                  = true
+    nf_instance_alias                   = "5g_cloud_network_function"
+    fqdn_alias                          = "5g-apps"
+    ua_alias                            = "user_agent_csv"
+    min_tcp_flow_client_port            = 32768
+    max_tcp_flow_client_port            = 36863
+    packet_capture_log_level            = "receive"
+    csv_logging_log_level               = "none"
+    num_scp_processing_threads          = 16
+    num_tcp_flow_client_port_per_thread = 1000
+    tcp_server_ports                    = 443
+  }
+
+  hep3_config = {
+    num_ingress_tcp_conn     = 1024
+    num_egress_tcp_flows     = 2048
+    ingress_tcp_timeout      = 60
+    egress_tcp_flow_timeout  = 900
+    num_receive_thread       = 12
+    mtls                     = "disable"
+    hep3_timestamp           = true
+    recv_timestamp           = false
+    private_key_path         = "/usr/lib/vseries-web/api/crypto/private/cloud5g/pvt_key"
+    cert_file_path           = "/usr/lib/vseries-web/api/crypto/private/cloud5g/cloud5G.crt"
+    num_egress_sctp_flows    = 1024
+    egress_sctp_flow_timeout = 900
+    service_map_table_alias  = "5g-servicemap"
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
+### Nokia IMS mode
+
+```hcl
+resource "gigamon_app_5gcloud" "nokia_hep3_ims" {
+  monitoring_session_id = gigamon_monitoring_session.ms1.id
+  alias                 = "nokia_hep3_ims_app"
+  mode                  = "nokiaHEP3IMS"
+
+  rx_tunnel = [{
+    rx_type          = "tcp"
+    listen_ipaddress = "192.168.20.4"
+    listen_port      = 6100
+    rx_thread        = 1
+  }]
+
+  tx_tunnel = {
+    tx_type             = "vxlan"
+    tx_remote_ipaddress = "192.168.10.5"
+    tx_src_ipaddress    = "192.168.20.3"
+    tx_src_port         = 6101
+    tx_dst_port         = 4754
+    tx_vni_id           = 50
+  }
+
+  scp_config = {
+    num_tcp_flows                       = 1024
+    num_transaction_flows               = 2048
+    tcp_flow_timeout                    = 900
+    scp_transaction_timeout             = 10
+    header_index                        = true
+    header_compression_code             = false
+    nrf_discovery_enabled               = true
+    add_gigamon_header                  = true
+    nf_instance_alias                   = "5g_cloud_network_function"
+    fqdn_alias                          = "5g-apps"
+    ua_alias                            = "user_agent_csv"
+    min_tcp_flow_client_port            = 32768
+    max_tcp_flow_client_port            = 36863
+    packet_capture_log_level            = "receive"
+    csv_logging_log_level               = "none"
+    num_scp_processing_threads          = 16
+    num_tcp_flow_client_port_per_thread = 1000
+    tcp_server_ports                    = 443
+  }
+
+  hep3_config = {
+    num_ingress_tcp_conn     = 1024
+    num_egress_tcp_flows     = 2048
+    ingress_tcp_timeout      = 60
+    egress_tcp_flow_timeout  = 900
+    num_receive_thread       = 12
+    mtls                     = "disable"
+    hep3_timestamp           = true
+    recv_timestamp           = false
+    private_key_path         = "/usr/lib/vseries-web/api/crypto/private/cloud5g/pvt_key"
+    cert_file_path           = "/usr/lib/vseries-web/api/crypto/private/cloud5g/cloud5G.crt"
+    num_egress_sctp_flows    = 1024
+    egress_sctp_flow_timeout = 900
+    service_map_table_alias  = "5g-servicemap"
+  }
+
+  log_folder_loc   = "/var/log"
+  tunnel_log_level = 3
+}
+```
+
 ---
 
 ## Argument Reference
