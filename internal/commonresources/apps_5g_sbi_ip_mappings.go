@@ -14,13 +14,9 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -44,7 +40,6 @@ var sbiIPMappingsTypeEnum = []string{
 var _ resource.Resource = &App5GSBIIpMappings{}
 var _ resource.ResourceWithConfigure = &App5GSBIIpMappings{}
 var _ resource.ResourceWithImportState = &App5GSBIIpMappings{}
-var _ resource.ResourceWithModifyPlan = &App5GSBIIpMappings{}
 
 // New5GSBIIpMappings creates a new resource instance for SBI IP mappings upload.
 func New5GSBIIpMappings() resource.Resource {
@@ -80,9 +75,6 @@ func (r *App5GSBIIpMappings) Schema(ctx context.Context, req resource.SchemaRequ
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.RegexMatches(sbiIPMappingsNameRegex, "only alphanumeric, '-' and '_' are allowed"),
 				},
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
 			},
 
 			"type": schema.StringAttribute{
@@ -91,9 +83,6 @@ func (r *App5GSBIIpMappings) Schema(ctx context.Context, req resource.SchemaRequ
 				Validators: []validator.String{
 					stringvalidator.OneOf(sbiIPMappingsTypeEnum...),
 				},
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
 			},
 
 			"allow_duplicates": schema.BoolAttribute{
@@ -101,9 +90,6 @@ func (r *App5GSBIIpMappings) Schema(ctx context.Context, req resource.SchemaRequ
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.RequiresReplace(),
-				},
 			},
 
 			"csv_path": schema.StringAttribute{
@@ -112,9 +98,6 @@ func (r *App5GSBIIpMappings) Schema(ctx context.Context, req resource.SchemaRequ
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.RegexMatches(regexp.MustCompile(`(?i)^.*\.csv$`), "file must use .csv extension"),
-				},
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
 				},
 			},
 		},
@@ -138,63 +121,12 @@ func (r *App5GSBIIpMappings) Configure(ctx context.Context, req resource.Configu
 	r.fmClient = client
 }
 
-// ModifyPlan enforces immutable parameters after create.
-// Any change to configured arguments must be done via delete + recreate.
-func (r *App5GSBIIpMappings) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	// Delete operation
-	if req.Plan.Raw.IsNull() {
-		return
-	}
-
-	// Create operation
-	if req.State.Raw.IsNull() {
-		return
-	}
-
-	var stateData App5GSBIIpMappingsModel
-	var planData App5GSBIIpMappingsModel
-
-	resp.Diagnostics.Append(req.State.Get(ctx, &stateData)...)
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &planData)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if !planData.Name.IsUnknown() && !planData.Name.Equal(stateData.Name) {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("name"),
-			"Updating params is not allowed",
-			"Changing 'name' is not supported for gigamon_5g_apps_sbi_ip_mappings. Delete and recreate the resource.",
-		)
-	}
-
-	if !planData.Type.IsUnknown() && !planData.Type.Equal(stateData.Type) {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("type"),
-			"Updating params is not allowed",
-			"Changing 'type' is not supported for gigamon_5g_apps_sbi_ip_mappings. Delete and recreate the resource.",
-		)
-	}
-
-	if !planData.AllowDuplicates.IsUnknown() && !planData.AllowDuplicates.Equal(stateData.AllowDuplicates) {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("allow_duplicates"),
-			"Updating params is not allowed",
-			"Changing 'allow_duplicates' is not supported for gigamon_5g_apps_sbi_ip_mappings. Delete and recreate the resource.",
-		)
-	}
-
-	if !planData.CsvPath.IsUnknown() && !planData.CsvPath.Equal(stateData.CsvPath) {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("csv_path"),
-			"Updating params is not allowed",
-			"Changing 'csv_path' is not supported for gigamon_5g_apps_sbi_ip_mappings. Delete and recreate the resource.",
-		)
-	}
-}
-
 func (r *App5GSBIIpMappings) endpoint(name, mappingType string) string {
 	return fmt.Sprintf("api/v1.3/cloud/apps/config/sbiIpmappings/%s/%s", name, mappingType)
+}
+
+func (r *App5GSBIIpMappings) deleteEndpoint(name, mappingType string) string {
+	return fmt.Sprintf("api/v1.3/cloud/monitoringSessions/ipMappingTable/%s/%s", name, mappingType)
 }
 
 func (r *App5GSBIIpMappings) readFromFM(ctx context.Context, data *App5GSBIIpMappingsModel) error {
@@ -372,7 +304,57 @@ func (r *App5GSBIIpMappings) Read(ctx context.Context, req resource.ReadRequest,
 }
 
 func (r *App5GSBIIpMappings) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// csv_path and identity changes trigger replace; Update has nothing to do.
+	var plan App5GSBIIpMappingsModel
+	var state App5GSBIIpMappingsModel
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Delete the existing FM record first.
+	tflog.Info(ctx, "Deleting existing SBI IP mappings before update", map[string]any{
+		"name": state.Name.ValueString(),
+		"type": state.Type.ValueString(),
+	})
+	query := map[string]string{"persist": "true"}
+	_, deleteErr := r.fmClient.DoRequest(ctx, "DELETE", r.deleteEndpoint(state.Name.ValueString(), state.Type.ValueString()), query, nil, nil, "")
+	if deleteErr != nil {
+		var fmErr *fmclient.FMErrors
+		if !errors.As(deleteErr, &fmErr) || fmErr.ErrorCode() != fmclient.ObjectNotFound {
+			resp.Diagnostics.AddError(
+				"Unable to delete SBI IP mappings during update",
+				fmt.Sprintf("name=%q type=%q error: %v", state.Name.ValueString(), state.Type.ValueString(), deleteErr),
+			)
+			return
+		}
+	}
+
+	// Re-upload with the new plan values.
+	csvPath := ""
+	if !plan.CsvPath.IsNull() && !plan.CsvPath.IsUnknown() {
+		csvPath = strings.TrimSpace(plan.CsvPath.ValueString())
+	}
+	if csvPath == "" {
+		resp.Diagnostics.AddError(
+			"Missing csv_path",
+			"'csv_path' must be provided when updating the SBI IP mappings resource.",
+		)
+		return
+	}
+
+	allowDuplicates := false
+	if !plan.AllowDuplicates.IsNull() && !plan.AllowDuplicates.IsUnknown() {
+		allowDuplicates = plan.AllowDuplicates.ValueBool()
+	}
+
+	if err := r.uploadFile(ctx, plan.Name.ValueString(), plan.Type.ValueString(), csvPath, allowDuplicates); err != nil {
+		resp.Diagnostics.AddError("Unable to upload SBI IP mappings CSV during update", err.Error())
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *App5GSBIIpMappings) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -401,7 +383,7 @@ func (r *App5GSBIIpMappings) Delete(ctx context.Context, req resource.DeleteRequ
 	_, err := r.fmClient.DoRequest(
 		ctx,
 		"DELETE",
-		r.endpoint(data.Name.ValueString(), data.Type.ValueString()),
+		r.deleteEndpoint(data.Name.ValueString(), data.Type.ValueString()),
 		query,
 		nil,
 		nil,
