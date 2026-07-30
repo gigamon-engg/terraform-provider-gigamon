@@ -105,6 +105,7 @@ func (tm *TrafficMap) ValidateConfig(
 
 	applyAndValidateAsfSessionFields(cfg.Asf, &resp.Diagnostics)
 	validateAppRulesRequireAsf(&cfg, &resp.Diagnostics)
+	validateAppRulesRuleIDRequired(&cfg, &resp.Diagnostics)
 }
 
 // Initial Configure call, to initialize the Provider
@@ -149,6 +150,7 @@ func (tm *TrafficMap) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 	validateAppRulesRequireAsf(&data, &resp.Diagnostics)
+	validateAppRulesRuleIDRequired(&data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -258,6 +260,7 @@ func (tm *TrafficMap) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 	validateAppRulesRequireAsf(&planData, &resp.Diagnostics)
+	validateAppRulesRuleIDRequired(&planData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -621,6 +624,38 @@ func validateAppRulesRequireAsf(data *MapModel, diags *diag.Diagnostics) {
 			"app_rules require ASF",
 			"rule_sets.app_rules is supported only when asf.asf_profile_config is configured on the traffic map.",
 		)
+	}
+}
+
+func validateAppRulesRuleIDRequired(data *MapModel, diags *diag.Diagnostics) {
+	if data == nil {
+		return
+	}
+
+	for i, rs := range data.RuleSets {
+		if rs.AppRules == nil {
+			continue
+		}
+
+		for j, pr := range rs.AppRules.PassRules {
+			if pr.RuleId.IsNull() || pr.RuleId.IsUnknown() {
+				diags.AddAttributeError(
+					path.Root("rule_sets").AtListIndex(i).AtName("app_rules").AtName("pass_rules").AtListIndex(j).AtName("rule_id"),
+					"app_rules.pass_rules.rule_id is required",
+					"rule_id (integer) must be configured for each app_rules.pass_rules entry.",
+				)
+			}
+		}
+
+		for j, dr := range rs.AppRules.DropRules {
+			if dr.RuleId.IsNull() || dr.RuleId.IsUnknown() {
+				diags.AddAttributeError(
+					path.Root("rule_sets").AtListIndex(i).AtName("app_rules").AtName("drop_rules").AtListIndex(j).AtName("rule_id"),
+					"app_rules.drop_rules.rule_id is required",
+					"rule_id (integer) must be configured for each app_rules.drop_rules entry.",
+				)
+			}
+		}
 	}
 }
 

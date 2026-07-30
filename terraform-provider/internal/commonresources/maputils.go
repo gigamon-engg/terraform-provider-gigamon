@@ -214,6 +214,7 @@ type AppProfileConfigRuleModel struct {
 }
 
 type AppRuleModel struct {
+	RuleId           types.Int32                  `tfsdk:"rule_id"`
 	AppProfileConfig *AppProfileConfigRuleModel `tfsdk:"app_profile_config"`
 }
 
@@ -421,6 +422,7 @@ type appProfileConfigRuleGo struct {
 }
 
 type appRuleGo struct {
+	RuleId           int32                   `json:"ruleId"`
 	AppProfileConfig *appProfileConfigRuleGo `json:"appProfileConfig,omitempty"`
 }
 
@@ -1572,6 +1574,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 					"pass_rules": schema.ListNestedAttribute{
 						Optional: true,
 						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"rule_id": schema.Int32Attribute{
+								Required: true,
+							},
 							"app_profile_config": schema.SingleNestedAttribute{
 								Required: true,
 								Attributes: map[string]schema.Attribute{
@@ -1589,6 +1594,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 					"drop_rules": schema.ListNestedAttribute{
 						Optional: true,
 						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"rule_id": schema.Int32Attribute{
+								Required: true,
+							},
 							"app_profile_config": schema.SingleNestedAttribute{
 								Required: true,
 								Attributes: map[string]schema.Attribute{
@@ -2110,7 +2118,7 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 			if len(modelRuleSet.AppRules.PassRules) > 0 {
 				appRules.PassRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.PassRules))
 				for _, m := range modelRuleSet.AppRules.PassRules {
-					goRule := appRuleGo{}
+					goRule := appRuleGo{RuleId: m.RuleId.ValueInt32()}
 					if m.AppProfileConfig != nil {
 						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
 						if len(m.AppProfileConfig.Applications) > 0 {
@@ -2128,7 +2136,7 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 			if len(modelRuleSet.AppRules.DropRules) > 0 {
 				appRules.DropRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.DropRules))
 				for _, m := range modelRuleSet.AppRules.DropRules {
-					goRule := appRuleGo{}
+					goRule := appRuleGo{RuleId: m.RuleId.ValueInt32()}
 					if m.AppProfileConfig != nil {
 						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
 						if len(m.AppProfileConfig.Applications) > 0 {
@@ -2293,7 +2301,7 @@ func GetMSMapData(
 					if len(goRuleSet.AppRules.PassRules) > 0 {
 						modelAppRules.PassRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.PassRules))
 						for _, goRule := range goRuleSet.AppRules.PassRules {
-							modelRule := AppRuleModel{}
+							modelRule := AppRuleModel{RuleId: types.Int32Value(goRule.RuleId)}
 							if goRule.AppProfileConfig != nil {
 								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
 								if len(goRule.AppProfileConfig.Applications) > 0 {
@@ -2310,7 +2318,7 @@ func GetMSMapData(
 					if len(goRuleSet.AppRules.DropRules) > 0 {
 						modelAppRules.DropRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.DropRules))
 						for _, goRule := range goRuleSet.AppRules.DropRules {
-							modelRule := AppRuleModel{}
+							modelRule := AppRuleModel{RuleId: types.Int32Value(goRule.RuleId)}
 							if goRule.AppProfileConfig != nil {
 								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
 								if len(goRule.AppProfileConfig.Applications) > 0 {
