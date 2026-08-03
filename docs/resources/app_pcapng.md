@@ -139,13 +139,15 @@ Topology notes:
 
 ## Mode Behavior + Dependency Matrix
 
-| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
-|---|---|---|
-| `app_mode = secondary` | `domain_classification` must stay `false` | `domain_classification = true` is rejected |
-| `app_mode = secondary` | N/A | `domain_table_alias` and custom `flow_timeout` are rejected |
-| `app_mode = primary` and `domain_classification = false` | `domain_table_alias` omitted; `flow_timeout` left at default | Setting `domain_table_alias` or custom `flow_timeout` is rejected |
-| `app_mode = primary` and `domain_classification = true` | `domain_table_alias` and `flow_timeout` may be set | `flow_timeout` outside `360..1860` is rejected |
-| `app_mode` omitted | Defaults to `secondary` | N/A |
+```text
+Condition                                             | Required / Allowed                                   | Not Allowed / Enforced Behavior
+----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------
+app_mode = secondary                                  | domain_classification must stay false                | domain_classification = true is rejected
+app_mode = secondary                                  | N/A                                                  | domain_table_alias and custom flow_timeout are rejected
+app_mode = primary and domain_classification = false  | domain_table_alias omitted; flow_timeout at default  | Setting domain_table_alias or custom flow_timeout is rejected
+app_mode = primary and domain_classification = true   | domain_table_alias and flow_timeout may be set       | flow_timeout outside 360..1860 is rejected
+app_mode omitted                                      | Defaults to secondary                                | N/A
+```
 
 ---
 

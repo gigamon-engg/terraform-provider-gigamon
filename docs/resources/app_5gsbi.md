@@ -219,15 +219,17 @@ Optional fields:
 
 ## Mode Behavior + Dependency Matrix
 
-| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
-|---|---|---|
-| Always | `type = ericssonVTap` | Any other `type` value is rejected |
-| Always | `ericsson_vtap_config` required | Missing block is rejected |
-| `ericsson_vtap_config.mode` omitted | Defaults to `L7json` | Values other than `L7json` are rejected |
-| `ericsson_vtap_config.destination_ip` omitted | Defaults to `SCP` | Values other than `SCP` or `destinationNF` are rejected |
-| `http2_synthesize_tool_mtu_packet_size` set | `0` or `1200..9200` | Other values are rejected |
-| `transaction_log_file_interval` set | `5` or `60` | Other values are rejected |
-| `log_folder_size` set | `0` or `50..40960` | Other values are rejected |
+```text
+Condition                                      | Required / Allowed                      | Not Allowed / Enforced Behavior
+---------------------------------------------- | --------------------------------------- | -----------------------------------------------
+Always                                         | type = ericssonVTap                     | Any other type value is rejected
+Always                                         | ericsson_vtap_config required           | Missing block is rejected
+ericsson_vtap_config.mode omitted              | Defaults to L7json                      | Values other than L7json are rejected
+ericsson_vtap_config.destination_ip omitted    | Defaults to SCP                         | Values other than SCP or destinationNF rejected
+http2_synthesize_tool_mtu_packet_size set      | 0 or 1200..9200                         | Other values are rejected
+transaction_log_file_interval set              | 5 or 60                                 | Other values are rejected
+log_folder_size set                            | 0 or 50..40960                          | Other values are rejected
+```
 
 ---
 
