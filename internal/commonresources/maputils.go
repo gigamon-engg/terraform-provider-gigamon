@@ -200,6 +200,7 @@ type AppProfileConfigRuleModel struct {
 }
 
 type AppRuleModel struct {
+	RuleId           types.Int32                  `tfsdk:"rule_id"`
 	AppProfileConfig *AppProfileConfigRuleModel `tfsdk:"app_profile_config"`
 }
 
@@ -407,6 +408,7 @@ type appProfileConfigRuleGo struct {
 }
 
 type appRuleGo struct {
+	RuleId           int32                   `json:"ruleId"`
 	AppProfileConfig *appProfileConfigRuleGo `json:"appProfileConfig,omitempty"`
 }
 
@@ -917,6 +919,84 @@ func (v ip4ProtoRangeValidator) ValidateInt32(
 	}
 }
 
+// ip4ProtoSubsetValidator ensures protocol_subset is only configured when protocol_max is set
+type ip4ProtoSubsetValidator struct{}
+
+func (v ip4ProtoSubsetValidator) Description(ctx context.Context) string {
+	return "protocol_subset must be set when protocol_max is set, and must not be set when protocol_max is not set"
+}
+
+func (v ip4ProtoSubsetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ip4ProtoSubsetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	// If subset is null/unknown, nothing to validate (only checked if explicitly set)
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	// Read the entire ipv4_protocol block to check if protocol_max is set
+	var parent Ip4ProtoRuleModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// If subset is set but protocol_max is not set, that's an error
+	if parent.ProtocolMax.IsNull() || parent.ProtocolMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid protocol_subset configuration",
+			"protocol_subset can only be set when protocol_max is also configured",
+		)
+	}
+}
+
+// ip4ProtoMaxRequiresSubsetValidator ensures that when protocol_max is set, protocol_subset is also required
+type ip4ProtoMaxRequiresSubsetValidator struct{}
+
+func (v ip4ProtoMaxRequiresSubsetValidator) Description(ctx context.Context) string {
+	return "protocol_subset is required when protocol_max is set"
+}
+
+func (v ip4ProtoMaxRequiresSubsetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ip4ProtoMaxRequiresSubsetValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	// If max is null/unknown, nothing to validate
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	// Read the entire ipv4_protocol block to check if protocol_subset is set
+	var parent Ip4ProtoRuleModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// If protocol_max is set but protocol_subset is not set, that's an error
+	if parent.ProtocolSubset.IsNull() || parent.ProtocolSubset.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid protocol_max configuration",
+			"protocol_subset must be set when protocol_max is configured. Choose from: none, even, odd",
+		)
+	}
+}
+
 func ip4ProtoSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
@@ -951,19 +1031,15 @@ func ip4ProtoSchema() schema.SingleNestedAttribute {
 					int32validator.AtLeast(0),
 					int32validator.AtMost(255),
 					ip4ProtoRangeValidator{},
+					ip4ProtoMaxRequiresSubsetValidator{},
 				},
 			},
 			"protocol_subset": schema.StringAttribute{
-				MarkdownDescription: "Restrict matches within [protocol_min, protocol_max] to `all` (no parity filter), only `even`, or only `odd` protocol numbers. `even`/`odd` require protocol_max.",
+				MarkdownDescription: "Restrict matches within [protocol_min, protocol_max] to `none` (no parity filter), only `even`, or only `odd` protocol numbers. Required when protocol_max is set; must not be set when protocol_max is omitted.",
 				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString("all"),
 				Validators: []validator.String{
-					stringvalidator.OneOf("all", "even", "odd"),
-					// For even/odd we require max to be present.
-					stringvalidator.AlsoRequires(path.Expressions{
-						path.MatchRelative().AtParent().AtName("protocol_max"),
-					}...),
+					stringvalidator.OneOf("none", "even", "odd"),
+					ip4ProtoSubsetValidator{},
 				},
 			},
 		},
@@ -1484,6 +1560,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 					"pass_rules": schema.ListNestedAttribute{
 						Optional: true,
 						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"rule_id": schema.Int32Attribute{
+								Required: true,
+							},
 							"app_profile_config": schema.SingleNestedAttribute{
 								Required: true,
 								Attributes: map[string]schema.Attribute{
@@ -1501,6 +1580,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 					"drop_rules": schema.ListNestedAttribute{
 						Optional: true,
 						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+							"rule_id": schema.Int32Attribute{
+								Required: true,
+							},
 							"app_profile_config": schema.SingleNestedAttribute{
 								Required: true,
 								Attributes: map[string]schema.Attribute{
@@ -2022,7 +2104,7 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 			if len(modelRuleSet.AppRules.PassRules) > 0 {
 				appRules.PassRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.PassRules))
 				for _, m := range modelRuleSet.AppRules.PassRules {
-					goRule := appRuleGo{}
+					goRule := appRuleGo{RuleId: m.RuleId.ValueInt32()}
 					if m.AppProfileConfig != nil {
 						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
 						if len(m.AppProfileConfig.Applications) > 0 {
@@ -2040,7 +2122,7 @@ func ModelMapToGoMap(ctx context.Context, data *MapModel) *MapGo {
 			if len(modelRuleSet.AppRules.DropRules) > 0 {
 				appRules.DropRules = make([]appRuleGo, 0, len(modelRuleSet.AppRules.DropRules))
 				for _, m := range modelRuleSet.AppRules.DropRules {
-					goRule := appRuleGo{}
+					goRule := appRuleGo{RuleId: m.RuleId.ValueInt32()}
 					if m.AppProfileConfig != nil {
 						cfg := &appProfileConfigRuleGo{Type: m.AppProfileConfig.Type.ValueString()}
 						if len(m.AppProfileConfig.Applications) > 0 {
@@ -2205,7 +2287,7 @@ func GetMSMapData(
 					if len(goRuleSet.AppRules.PassRules) > 0 {
 						modelAppRules.PassRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.PassRules))
 						for _, goRule := range goRuleSet.AppRules.PassRules {
-							modelRule := AppRuleModel{}
+							modelRule := AppRuleModel{RuleId: types.Int32Value(goRule.RuleId)}
 							if goRule.AppProfileConfig != nil {
 								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
 								if len(goRule.AppProfileConfig.Applications) > 0 {
@@ -2222,7 +2304,7 @@ func GetMSMapData(
 					if len(goRuleSet.AppRules.DropRules) > 0 {
 						modelAppRules.DropRules = make([]AppRuleModel, 0, len(goRuleSet.AppRules.DropRules))
 						for _, goRule := range goRuleSet.AppRules.DropRules {
-							modelRule := AppRuleModel{}
+							modelRule := AppRuleModel{RuleId: types.Int32Value(goRule.RuleId)}
 							if goRule.AppProfileConfig != nil {
 								cfg := &AppProfileConfigRuleModel{Type: types.StringValue(goRule.AppProfileConfig.Type)}
 								if len(goRule.AppProfileConfig.Applications) > 0 {
@@ -2700,8 +2782,8 @@ func GoIp4ProtoToModel(ruleElements map[string]any) *Ip4ProtoRuleModel {
 		m.ProtocolMax = types.Int32Value(anyToInt32(v, "matches.valueMax"))
 	}
 
-	// subset -> protocol_subset; FM "none" becomes TF "all"
-	subset := "all"
+	// subset -> protocol_subset; FM "none" stays as TF "none"
+	subset := "none"
 	if v, ok := ruleElements["subset"]; ok {
 		s := v.(string)
 		if s != "" && s != "none" {

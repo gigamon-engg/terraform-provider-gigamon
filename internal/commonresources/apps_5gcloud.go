@@ -266,6 +266,39 @@ func (r *App5GCloud) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp.TypeName = req.ProviderTypeName + "_app_5gcloud"
 }
 
+// modeImmutablePlanModifier is a custom plan modifier that prevents changes to the mode field after creation
+type modeImmutablePlanModifier struct{}
+
+// Description returns a plain text description of the plan modifier's behavior.
+func (m modeImmutablePlanModifier) Description(ctx context.Context) string {
+	return "mode cannot be changed once the app is configured"
+}
+
+// MarkdownDescription returns a markdown formatted description of the plan modifier's behavior.
+func (m modeImmutablePlanModifier) MarkdownDescription(ctx context.Context) string {
+	return "mode cannot be changed once the app is configured"
+}
+
+// PlanModifyString implements the plan modification logic.
+func (m modeImmutablePlanModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	// Do nothing if this is a new resource
+	if req.StateValue.IsNull() {
+		return
+	}
+
+	// Do nothing if the plan value equals the state value
+	if req.PlanValue.Equal(req.StateValue) {
+		return
+	}
+
+	// If the mode is changing, add an error
+	resp.Diagnostics.AddAttributeError(
+		req.Path,
+		"Mode Cannot Be Changed",
+		fmt.Sprintf("mode cannot be changed once the app is configured. Previous value: %s, new value: %s", req.StateValue.ValueString(), req.PlanValue.ValueString()),
+	)
+}
+
 // Schema defines the resource schema
 func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
@@ -286,23 +319,6 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"mode": schema.StringAttribute{
-				Description: "5G Cloud operating mode.",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.OneOf(
-						"casaVtap",
-						"oracleSCP",
-						"nokiaSCPInbound",
-						"nokiaSCPIn-Outbound",
-						"SBINF",
-						"ericssonSCPOutbound",
-						"ericssonSCPIn-Outbound",
-						"nokiaHEP3Inbound",
-						"nokiaHEP3IMS",
-					),
 				},
 			},
 			"rx_tunnel": schema.ListNestedAttribute{
@@ -505,6 +521,26 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					int64validator.Between(0, 5),
 				},
 			},
+			"mode": schema.StringAttribute{
+				Description: "5G Cloud operating mode. Cannot be changed after creation.",
+				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"casaVtap",
+						"oracleSCP",
+						"nokiaSCPInbound",
+						"nokiaSCPIn-Outbound",
+						"SBINF",
+						"ericssonSCPOutbound",
+						"ericssonSCPIn-Outbound",
+						"nokiaHEP3Inbound",
+						"nokiaHEP3IMS",
+					),
+				},
+				PlanModifiers: []planmodifier.String{
+					modeImmutablePlanModifier{},
+				},
+			},
 			"alias": schema.StringAttribute{
 				Description: "Alias for the 5G Cloud application.",
 				Required:    true,
@@ -517,7 +553,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 	}
 }
 
-// Configure configures the resource with provider client
+// Configure is called when the provider has been configured.
 func (r *App5GCloud) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
@@ -545,7 +581,13 @@ func (r *App5GCloud) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
-	validate5GCloudConfig(ctx, data, &resp.Diagnostics)
+	var configData App5GCloudModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &configData)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validate5GCloudConfig(ctx, data, &configData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -645,7 +687,13 @@ func (r *App5GCloud) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	validate5GCloudConfig(ctx, planData, &resp.Diagnostics)
+	var configData App5GCloudModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &configData)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validate5GCloudConfig(ctx, planData, &configData, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -1297,7 +1345,7 @@ func mapFM5GCloudToState(ctx context.Context, fmData FM5GCloud, sessionID string
 	return model
 }
 
-func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *diag.Diagnostics) {
+func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, configModel *App5GCloudModel, diags *diag.Diagnostics) {
 	mode := model.Mode.ValueString()
 
 	if !model.RxTunnel.IsNull() && !model.RxTunnel.IsUnknown() {
@@ -1344,6 +1392,11 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 			return
 		}
 
+		txConfigured := tx
+		if configModel != nil && !configModel.TxTunnel.IsNull() && !configModel.TxTunnel.IsUnknown() {
+			_ = configModel.TxTunnel.As(ctx, &txConfigured, basetypes.ObjectAsOptions{})
+		}
+
 		allowedTxTypes := []string{"vxlan", "l2gre"}
 		if mode == "casaVtap" {
 			allowedTxTypes = []string{"vxlan", "l2gre", "udpgre"}
@@ -1353,12 +1406,18 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 		}
 		switch tx.TxType.ValueString() {
 		case "vxlan":
+			if !txConfigured.L2GreKey.IsNull() && !txConfigured.L2GreKey.IsUnknown() {
+				diags.AddError("Invalid tx_tunnel.l2gre_key", "tx_tunnel.l2gre_key is not configurable when tx_tunnel.tx_type is vxlan")
+			}
 			if mode == "casaVtap" || mode == "oracleSCP" {
 				if tx.TxVNIId.IsNull() || tx.TxVNIId.IsUnknown() || tx.TxVNIId.ValueInt64() == 0 {
 					diags.AddError("Missing tx_tunnel.tx_vni_id", fmt.Sprintf("tx_tunnel.tx_vni_id is required when mode is %s and tx_type is vxlan", mode))
 				}
 			}
 		case "l2gre":
+			if !txConfigured.TxVNIId.IsNull() && !txConfigured.TxVNIId.IsUnknown() {
+				diags.AddError("Invalid tx_tunnel.tx_vni_id", "tx_tunnel.tx_vni_id is not configurable when tx_tunnel.tx_type is l2gre")
+			}
 			if mode == "casaVtap" || mode == "oracleSCP" {
 				if tx.L2GreKey.IsNull() || tx.L2GreKey.IsUnknown() || tx.L2GreKey.ValueInt64() == 0 {
 					diags.AddError("Missing tx_tunnel.l2gre_key", fmt.Sprintf("tx_tunnel.l2gre_key is required when mode is %s and tx_type is l2gre", mode))
@@ -1442,10 +1501,15 @@ func validate5GCloudConfig(ctx context.Context, model App5GCloudModel, diags *di
 			}
 		}
 		if mode != "nokiaSCPInbound" {
-			if !scp.NokiaInboundReplaceAuthority.IsNull() && !scp.NokiaInboundReplaceAuthority.IsUnknown() && scp.NokiaInboundReplaceAuthority.ValueBool() {
+			nokiaInboundConfigured := scp
+			if configModel != nil && !configModel.ScpConfig.IsNull() && !configModel.ScpConfig.IsUnknown() {
+				_ = configModel.ScpConfig.As(ctx, &nokiaInboundConfigured, basetypes.ObjectAsOptions{})
+			}
+
+			if !nokiaInboundConfigured.NokiaInboundReplaceAuthority.IsNull() && !nokiaInboundConfigured.NokiaInboundReplaceAuthority.IsUnknown() {
 				diags.AddError("Invalid scp_config.nokia_inbound_replace_authority", fmt.Sprintf("nokia_inbound_replace_authority is only configurable when mode is nokiaSCPInbound, got %s", mode))
 			}
-			if !scp.NokiaInboundUse3gppTargetApiRoot.IsNull() && !scp.NokiaInboundUse3gppTargetApiRoot.IsUnknown() && scp.NokiaInboundUse3gppTargetApiRoot.ValueBool() {
+			if !nokiaInboundConfigured.NokiaInboundUse3gppTargetApiRoot.IsNull() && !nokiaInboundConfigured.NokiaInboundUse3gppTargetApiRoot.IsUnknown() {
 				diags.AddError("Invalid scp_config.nokia_inbound_use_3gpp_target_api_root", fmt.Sprintf("nokia_inbound_use_3gpp_target_api_root is only configurable when mode is nokiaSCPInbound, got %s", mode))
 			}
 		}
