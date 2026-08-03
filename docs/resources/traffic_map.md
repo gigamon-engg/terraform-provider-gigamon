@@ -95,6 +95,180 @@ resource "gigamon_link" "web_to_app" {
 
 ---
 
+## AFI usage in `gigamon_traffic_map`
+
+AFI behavior on a traffic map is configured through the top-level `asf` block.
+The exact path is:
+
+- `asf.asf_profile_config.session_fields`
+- `asf.asf_profile_config.timeout`
+- `asf.asf_profile_config.packet_count`
+- `asf.asf_profile_config.bidi`
+- `asf.asf_profile_config.buffering.enabled`
+- `asf.asf_profile_config.buffering.protocol`
+- `asf.asf_profile_config.buffering.buffer_count_before_match`
+
+`app_rules` under each rule set are ASF/AFI-aware and are supported only when
+`asf.asf_profile_config` is configured on the same `gigamon_traffic_map`.
+
+### Placement and structure
+
+```hcl
+resource "gigamon_traffic_map" "afi_map" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "afi-map"
+
+  asf = {
+    asf_profile_config = {
+      session_fields = [
+        { pos = 2, type = "fiveTuple" },
+        { pos = 2, type = "vlanId" }
+      ]
+      timeout      = 15
+      packet_count = 30
+      bidi         = true
+
+      buffering = {
+        enabled                   = true
+        protocol                  = "tcpUdp"
+        buffer_count_before_match = 20
+      }
+    }
+  }
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 10
+      pass_rules  = [{ rule_id = 1, ip_version = { ip_version = "v4" } }]
+    }
+  ]
+}
+```
+
+### Example: AFI map linked by `source_aep_id`
+
+```hcl
+resource "gigamon_traffic_map" "afi_to_tool" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "afi-to-tool"
+
+  asf = {
+    asf_profile_config = {
+      session_fields = [{ pos = 2, type = "fiveTuple" }]
+      timeout        = 15
+      packet_count   = 30
+      bidi           = true
+      buffering = {
+        enabled                   = true
+        protocol                  = "tcpUdp"
+        buffer_count_before_match = 20
+      }
+    }
+  }
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 20
+      pass_rules = [
+        {
+          rule_id = 1
+          ipv4_protocol = {
+            protocol_min = 6
+          }
+        }
+      ]
+    }
+  ]
+}
+
+resource "gigamon_link" "afi_map_to_app" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+
+  source_id     = gigamon_traffic_map.afi_to_tool.id
+  source_aep_id = 20
+
+  dest_id = gigamon_application.app_ats.id
+}
+```
+
+### Example: `app_rules` with ASF enabled
+
+```hcl
+resource "gigamon_traffic_map" "afi_with_app_rules" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "afi-with-app-rules"
+
+  asf = {
+    asf_profile_config = {
+      session_fields = [{ pos = 2, type = "fiveTuple" }]
+      timeout        = 15
+      packet_count   = 30
+      bidi           = true
+      buffering = {
+        enabled                   = true
+        protocol                  = "tcpUdp"
+        buffer_count_before_match = 20
+      }
+    }
+  }
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 30
+
+      pass_rules = [{ rule_id = 1, ip_version = { ip_version = "v4" } }]
+
+      app_rules = {
+        pass_rules = [
+          {
+            app_profile_config = {
+              type = "filter"
+              applications = [
+                { name = "ssl" },
+                { name = "http" }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+### Ordering and evaluation behavior
+
+- Rule set priority controls rule set evaluation order (`priority` 1 is highest).
+- `source_aep_id` on `gigamon_link` selects which rule set output (`rule_sets[*].aep_id`) is wired to the destination.
+- ASF options are map-level controls and are not configured per individual rule.
+- `app_rules` are validated as ASF-dependent by the provider; configure ASF first when using application-level rules.
+
+### AFI/ASF validation notes (provider-validated)
+
+- `asf` is optional, but if set it must include `asf_profile_config`.
+- ASF requires a monitoring session that already has `scale_unit` configured.
+- `session_fields`:
+  - Must contain 1 to 2 entries.
+  - Must contain exactly one `type = "fiveTuple"` entry.
+  - May contain at most one additional `type = "vlanId"` entry.
+  - `pos` must be `2`.
+- `timeout` default is `15`, allowed range is `10` to `20`.
+- `packet_count` default is `30`, allowed range is `2` to `100`.
+- `buffering.buffer_count_before_match` default is `20`, allowed range is `3` to `20`.
+- `packet_count` must be greater than or equal to `buffering.buffer_count_before_match`.
+- `bidi` default is `true`.
+- `buffering.enabled` default is `true`.
+- `buffering.protocol` default is `tcpUdp`. The provider applies a default but does not currently enforce an enum validator at plan time.
+- `rule_sets.app_rules` are supported only when `asf.asf_profile_config` is present.
+
+---
+
 ### Multiple rule sets and rules from variables
 
 Use a `for` expression to build `rule_sets` and the nested `pass_rules` / `drop_rules` lists
@@ -249,6 +423,7 @@ resource "gigamon_traffic_map" "mixed" {
 * `monitoring_session_id` (String, **Required**) – ID of the Monitoring Session that owns this map. Typically set from `gigamon_monitoring_session.<name>.id`. Changing this forces a new resource.
 * `name` (String, **Required**) – Name of the traffic map, unique within the Monitoring Session.
 * `description` (String, Optional) – Free-form description for this traffic map.
+* `asf` (Object, Optional) – ASF profile used for AFI behavior on this traffic map. Must be provided as `asf.asf_profile_config` when `asf` is present.
 * `rule_sets` (List of Objects, **Required**) – One or more rule sets that define how traffic is matched and forwarded. At least **1** and at most **5** rule sets per map.
 
 ---
@@ -275,6 +450,7 @@ rule_sets = [
   This value must be referenced by `gigamon_link.source_aep_id` to connect map output to a destination.
 * `pass_rules` (List of Objects, Optional) – Rules for traffic to **forward** to `aep_id`. At least one rule is required when this block is specified. At least one of `pass_rules` or `drop_rules` must be present per rule set.
 * `drop_rules` (List of Objects, Optional) – Rules for traffic to **discard**. At least one rule is required when this block is specified. At least one of `pass_rules` or `drop_rules` must be present per rule set.
+* `app_rules` (Object, Optional) – Application rules (`pass_rules` and/or `drop_rules`) for ASF-enabled traffic maps. Supported only when `asf.asf_profile_config` is configured.
 
 > **Traffic map**: both `pass_rules` and `drop_rules` are allowed in the same rule set.
 

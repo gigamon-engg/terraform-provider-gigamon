@@ -26,18 +26,43 @@ along with this program. If not, see <https://www.gnu.org/licenses/>
 
 The **AMI application** (Application Metadata Intelligence) performs deep packet inspection and exports structured metadata records from mirrored traffic.
 
-Each AMI instance belongs to one monitoring session and can be linked to downstream outputs such as tunnels and maps.
+Each AMI instance belongs to one monitoring session and is typically used in topology as:
+
+- `gigamon_traffic_map` (or other source) -> `gigamon_app_ami`
+- `gigamon_app_ami` -> downstream destination (for example, tunnel/tool)
+
+AMI exporter entries are anchored to AEP IDs. Those AEP IDs are what you use when AMI acts as a link source.
 
 ---
 
 ## Example Usage
 
-### Minimal AMI with CEF exporter
+### Minimal AMI configuration
 
 ```hcl
-resource "gigamon_app_ami" "minimal" {
+resource "gigamon_app_ami" "app" {
   monitoring_session_id = gigamon_monitoring_session.ms.id
   alias                 = "ami-min"
+
+  app_metadata = {
+    flow_behavior    = "bidir"
+    multi_collect    = true
+    aggregate_mode   = false
+    observ_domain_id = 0
+
+    timeout = {
+      idle = 300
+    }
+  }
+}
+```
+
+### Practical AMI exporter configuration
+
+```hcl
+resource "gigamon_app_ami" "app" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  alias                 = "ami-export"
 
   app_metadata = {
     flow_behavior    = "bidir"
@@ -57,6 +82,13 @@ resource "gigamon_app_ami" "minimal" {
 
         exporter_config = {
           type = "cef"
+          max_pkt_size = 1500
+
+          cef = {
+            active_timeout   = 60
+            inactive_timeout = 15
+            record_type      = "segregated"
+          }
 
           app_profile_config = [
             {
@@ -70,6 +102,32 @@ resource "gigamon_app_ami" "minimal" {
   }
 }
 ```
+
+### Topology integration example
+
+```hcl
+# Upstream: send map output to AMI
+resource "gigamon_link" "map_to_ami" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  source_id             = gigamon_traffic_map.web.id
+  source_aep_id         = 2
+  dest_id               = gigamon_app_ami.app.id
+}
+
+# Downstream: send AMI exporter output to a destination
+resource "gigamon_link" "ami_to_tunnel" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  source_id             = gigamon_app_ami.app.id
+  source_aep_id         = 2
+  dest_id               = gigamon_tunnel.ami_sink.id
+}
+```
+
+Topology notes:
+
+- In the first link, `source_aep_id` belongs to the source map rule set.
+- In the second link, `source_aep_id` must match `app_metadata.exporters[*].aep_id` on AMI.
+- Keep all linked resources in the same monitoring session.
 
 ---
 
@@ -94,6 +152,111 @@ resource "gigamon_app_ami" "minimal" {
 - **`app_metadata`** (Block)
   Typed AMI metadata configuration.
   This is the primary block for AMI behavior tuning and exporter modeling.
+
+---
+
+## Nested Field Guidance
+
+### `app_metadata` (Object)
+
+Core fields:
+
+- **`flow_behavior`** (String, Optional, default: `bidir`)
+  Flow behavior mode for AMI processing. Common value is `bidir`.
+  Important compatibility rule: when `flow_behavior = "bidir"`, netflow exporter version `v5` or `v9` is rejected.
+
+- **`timeout`** (Object, Optional)
+  - **`idle`** (Number, Optional, default: `300`, min: `1`)
+
+- **`multi_collect`** (Boolean, Optional, default: `true`)
+
+- **`aggregate_mode`** (Boolean, Optional, default: `false`)
+
+- **`observ_domain_id`** (Number, Optional, default: `0`, min: `0`)
+
+- **`dpi_inject_limit`** (Number, Optional, default: `30`)
+  Valid values: `0` or range `20..50`.
+
+- **`match`** (Object, Optional)
+  Nested match selectors for `ipv4`, `ipv6`, `transport`, and `datalink`.
+  Important constraint: `app_metadata.match.ipv4.next_header` is not supported.
+
+- **`exporters`** (List of Objects, Optional)
+  Export pipeline definitions for AMI output. Each exporter has an AEP and exporter profile.
+
+- **`persist_profile_config`** (Object, Optional)
+  Optional persist profile definition.
+  - `alias` is required if this block is set.
+  - `type` defaults to `persist`.
+
+### `app_metadata.exporters[*]` (Object)
+
+- **`aep_id`** (Number, Required)
+  Valid range: `2..63`.
+
+- **`name`** (String, Required)
+  Must be non-empty.
+
+- **`exporter_config`** (Object, Required)
+  Contains exporter profile type and settings.
+
+### `app_metadata.exporters[*].exporter_config` (Object)
+
+- **`type`** (String, Optional, default: `cef`)
+  Allowed values: `cef`, `netflow`.
+
+- **`max_pkt_size`** (Number, Required)
+  Valid values: `0` or range `1280..9001`.
+
+- **`app_profile_config`** (List of Objects, Optional)
+  Application profile selectors for metadata export.
+  Common defaults inside each profile include:
+  - `type` default: `export`
+  - `application_id` default: `true`
+  - `family_id` default: `false`
+  - `tag_id` default: `true`
+
+- **`cef`** (Object, Conditional)
+  Required when `type = "cef"`. Must not be set when `type = "netflow"`.
+  - `active_timeout` default `60`, range `1..604800`
+  - `inactive_timeout` default `15`, range `1..604800`
+  - `record_type` default `segregated`, allowed `segregated|cohesive`
+
+- **`netflow`** (Object, Conditional)
+  Required when `type = "netflow"`. Must not be set when `type = "cef"`.
+  - `active_timeout` default `60`, range `1..604800`
+  - `inactive_timeout` default `15`, range `1..604800`
+  - `record_type` default `segregated`, allowed `segregated|cohesive`
+  - `template_refresh` default `60`, range `1..216000`
+  - `version` required, allowed `ipfix|v5|v9`
+  - extra rule: `flow_behavior = "bidir"` cannot be combined with netflow version `v5` or `v9`
+
+---
+
+## Validation and Behavior Notes
+
+- `monitoring_session_id` is required and changing it recreates this resource.
+- `alias` is required and must be non-empty.
+- `description` is optional; if set, it must be non-empty.
+- AMI requires `scale_unit` to already be configured on the selected monitoring session.
+- `app_metadata` is optional in schema, but real deployments should define it explicitly.
+- Exporter type consistency is enforced:
+  - `type = "cef"` requires `cef` and rejects `netflow`.
+  - `type = "netflow"` requires `netflow` and rejects `cef`.
+- `app_metadata.match.ipv4.next_header` and `app_profile_config[*].ipv4.next_header` are rejected.
+
+---
+
+## Mode Behavior + Dependency Matrix
+
+| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
+|---|---|---|
+| `app_metadata.exporters[*].exporter_config.type = "cef"` | `cef` block required | `netflow` block must not be set |
+| `app_metadata.exporters[*].exporter_config.type = "netflow"` | `netflow` block required; `netflow.version` required (`ipfix`, `v5`, `v9`) | `cef` block must not be set |
+| `flow_behavior = "bidir"` with netflow exporter | `netflow.version = ipfix` | `netflow.version = v5` or `v9` is rejected |
+| Any exporter entry | `exporter_config` required; `max_pkt_size` required (`0` or `1280..9001`) | Missing `exporter_config` is rejected |
+| `persist_profile_config` present | `persist_profile_config.alias` required | Missing alias is rejected |
+| IPv4 next-header toggles | Use `ipv6.next_header` when needed | `app_metadata.match.ipv4.next_header` and `app_profile_config[*].ipv4.next_header` are rejected |
 
 ### `app_metadata` block overview
 

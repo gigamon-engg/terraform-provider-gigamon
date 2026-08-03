@@ -24,13 +24,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>
 
 ## Resource: `gigamon_app_pcapng`
 
-The **PCapNG application** captures packets from a monitoring session and writes rolling capture files.
+The **PCapNG application** adds PCapNG processing to a monitoring session and can be used as a link destination in session topology.
 
 Use this resource to:
 
-- define packet filters (BPF, IPs, VLANs),
-- configure output file rotation and compression,
-- tune runtime performance parameters.
+- set app mode (`primary` or `secondary`),
+- optionally enable domain classification in `primary` mode,
+- configure domain-related controls when classification is enabled.
 
 Each `gigamon_app_pcapng` belongs to a single monitoring session.
 
@@ -43,29 +43,40 @@ Each `gigamon_app_pcapng` belongs to a single monitoring session.
 ```hcl
 resource "gigamon_app_pcapng" "app" {
   monitoring_session_id = gigamon_monitoring_session.ms.id
-  capture_mode          = "continuous"
-
-  packet_filter = {
-    bpf_syntax  = "tcp and port 443"
-    source_ip   = "192.0.2.10"
-    dest_ip     = "198.51.100.10"
-    vlan_filter = [100, 200]
-  }
-
-  output_config = {
-    file_path     = "/var/log/gigamon/pcapng/capture.pcapng"
-    max_file_size = 500
-    rotation      = true
-    compression   = "gzip"
-  }
-
-  performance = {
-    buffer_size    = 64
-    thread_count   = 4
-    packet_snaplen = 65535
-  }
+  alias                 = "pcapng-secondary"
+  app_mode              = "secondary"
 }
 ```
+
+### Practical PCapNG configuration
+
+```hcl
+resource "gigamon_app_pcapng" "app" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  alias                 = "pcapng-primary"
+  app_mode              = "primary"
+  domain_classification = true
+  flow_timeout          = 600
+  domain_table_alias    = "domain-map-1"
+}
+```
+
+### Topology link usage example
+
+```hcl
+resource "gigamon_link" "map_to_pcapng" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  source_id             = gigamon_traffic_map.web.id
+  source_aep_id         = 2
+  dest_id               = gigamon_app_pcapng.app.id
+}
+```
+
+Topology notes:
+
+- `source_aep_id` must match the source map rule set `aep_id`.
+- `dest_id` uses the typed ID exported by `gigamon_app_pcapng`.
+- Keep all linked resources in the same monitoring session.
 
 ---
 
@@ -77,79 +88,78 @@ resource "gigamon_app_pcapng" "app" {
   Monitoring Session where this application is configured.
   Use the monitoring session ID so capture behavior is bound to the intended traffic pipeline.
 
-- **`capture_mode`** (String)
-  Capture mode.
-  Valid values: `continuous`, `on-demand`, `triggered`.
-  Choose `continuous` for always-on capture, `on-demand` for operator-driven sessions, and `triggered` for event-based captures.
+- **`alias`** (String)
+  Alias for the PCapNG application.
+  Must be non-empty and may contain only alphanumeric characters, `_`, and `-`.
 
 ### Optional
 
-- **`packet_filter`** (Block)
-  Packet filtering configuration.
-  Use this to constrain captured traffic and avoid oversized capture files.
+- **`app_mode`** (String)
+  App mode for PCapNG.
+  Allowed values: `primary`, `secondary`.
+  Default: `secondary`.
 
-- **`output_config`** (Block)
-  Capture output configuration.
-  Use this to define storage path, rollover behavior, and compression policy.
+- **`domain_classification`** (Boolean)
+  Enable domain classification behavior.
+  Default: `false`.
+  Can be set to `true` only when `app_mode = "primary"`.
 
-- **`performance`** (Block)
-  Performance tuning configuration.
-  Use this to tune runtime resource consumption for expected packet rates.
+- **`domain_table_alias`** (String)
+  Domain table alias.
+  Configurable only when `app_mode = "primary"` and `domain_classification = true`.
 
-### `packet_filter` block
+- **`flow_timeout`** (Number)
+  Flow timeout used with domain classification.
+  Default: `660`.
+  Configurable only when `app_mode = "primary"` and `domain_classification = true`.
+  Valid range (when configurable): `360..1860`.
 
-- **`bpf_syntax`** (String)
-  BPF filter expression.
-  Prefer explicit filters (for example, protocol+port) to reduce storage and improve troubleshooting focus.
+### Computed/Internal
 
-- **`source_ip`** (String)
-  Source IP filter.
-  Use when captures must be narrowed to specific sources.
+- **`name`** (String, Computed)
+  Internal FM app name. Always `pcapng`.
 
-- **`dest_ip`** (String)
-  Destination IP filter.
-  Use when captures must be narrowed to specific destinations.
+---
 
-- **`vlan_filter`** (List of Number)
-  VLAN IDs to include.
-  Helpful when multiple tenants/workloads share the same tap path.
+## Mode-Specific Behavior
 
-### `output_config` block
+### `secondary` mode (default)
 
-- **`file_path`** (String)
-  Output capture file path.
-  Ensure the path is writable by the runtime and follows your retention conventions.
+- `domain_classification` must remain `false`.
+- `domain_table_alias` must not be configured.
+- `flow_timeout` is not configurable in this mode.
 
-- **`max_file_size`** (Number)
-  Maximum file size in MB.
-  Range: `1-10000`.
-  Set this with rotation to keep disk usage predictable.
+### `primary` mode
 
-- **`rotation`** (Boolean)
-  Enable file rotation.
-  Recommended for long-running capture modes.
+- `domain_classification` can be `false` or `true`.
+- When `domain_classification = false`, `domain_table_alias` and custom `flow_timeout` are not allowed.
+- When `domain_classification = true`, you may set `domain_table_alias` and `flow_timeout`.
 
-- **`compression`** (String)
-  Compression mode.
-  Valid values: `none`, `gzip`, `xz`.
-  Choose based on storage efficiency vs compression overhead requirements.
+---
 
-### `performance` block
+## Mode Behavior + Dependency Matrix
 
-- **`buffer_size`** (Number)
-  Buffer size in MB.
-  Range: `4-1024`.
-  Increase for high packet-rate bursts to reduce drop risk.
+| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
+|---|---|---|
+| `app_mode = secondary` | `domain_classification` must stay `false` | `domain_classification = true` is rejected |
+| `app_mode = secondary` | N/A | `domain_table_alias` and custom `flow_timeout` are rejected |
+| `app_mode = primary` and `domain_classification = false` | `domain_table_alias` omitted; `flow_timeout` left at default | Setting `domain_table_alias` or custom `flow_timeout` is rejected |
+| `app_mode = primary` and `domain_classification = true` | `domain_table_alias` and `flow_timeout` may be set | `flow_timeout` outside `360..1860` is rejected |
+| `app_mode` omitted | Defaults to `secondary` | N/A |
 
-- **`thread_count`** (Number)
-  Thread count.
-  Range: `1-16`.
-  Scale up carefully based on available CPU and observed throughput.
+---
 
-- **`packet_snaplen`** (Number)
-  Snapshot length per packet.
-  Range: `64-65535`.
-  Lower values reduce storage footprint; higher values preserve more packet payload context.
+## Validation and Dependency Notes
+
+- `monitoring_session_id` is required and changing it recreates the resource.
+- `alias` is required; regex: `^[A-Za-z0-9_-]+$`.
+- `app_mode` defaults to `secondary`; only `primary` and `secondary` are allowed.
+- `domain_classification` defaults to `false`.
+- `domain_table_alias` is conditionally allowed only with `app_mode = "primary"` and `domain_classification = true`.
+- `flow_timeout` defaults to `660` and is conditionally configurable only with `app_mode = "primary"` and `domain_classification = true`.
+- When configurable, `flow_timeout` must be between `360` and `1860`.
+
+- Provider payload behavior: domain fields are sent only in `primary` mode; `domain_table_alias` and `flow_timeout` are sent only when `domain_classification = true`.
 
 ---
 
@@ -158,7 +168,7 @@ resource "gigamon_app_pcapng" "app" {
 In addition to the arguments above, this resource exports:
 
 - **`id`** (String)
-  Typed application identifier in the form `app::<type>::<uuid>`.
+  Typed application identifier in the form `app::PCapNG::<uuid>`.
 
 ---
 
