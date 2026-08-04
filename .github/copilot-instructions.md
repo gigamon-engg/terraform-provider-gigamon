@@ -31,7 +31,7 @@ Both components are part of a Go workspace (`go.work`).
 
 ```bash
 # Build and install the provider binary to $GOBIN
-go install ./terraform-provider
+go install .
 
 # Build the backend server
 go build ./tf_fm_backend
@@ -45,7 +45,7 @@ tfplugindocs
 
 The provider version is injected at build time:
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.version=v<version>'" ./terraform-provider
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.version=v<version>'" .
 ```
 
 After rebuilding for local testing, delete `.terraform/` and `.terraform.lock.hcl` in the consumer TF project before re-running `terraform init` (the local plugin path has a fixed version, so checksums change every build).
@@ -97,3 +97,42 @@ Authentication uses an API token. The `FM_API_TOKEN` environment variable takes 
 ### tf_fm_backend
 
 Documents are stored in MongoDB collection `terraformBackendState` in database `fmdb2`. A compound unique index on `(doc_type, project)` enforces one state doc and one lock doc per project. The service authorizes requests by calling FM's internal auth service (`http://127.0.0.1:6687/authorize`).
+
+
+## graphify
+
+For any question about this repo's architecture, structure, components, or how to add/modify/find
+code, your first action should be `graphify query "<question>"` when `graphify-out/graph.json`
+exists. Use `graphify path "<A>" "<B>"` for relationship questions and `graphify explain "<concept>"`
+for focused-concept questions. These return a scoped subgraph, usually much smaller than the full
+report or raw grep output.
+
+Triggers: "how do I…", "where is…", "what does … do", "add/modify a <component>",
+"explain the architecture", or anything that depends on how files or classes relate.
+
+If `graphify-out/wiki/index.md` exists, use it for broad navigation. Read `graphify-out/GRAPH_REPORT.md`
+only for broad architecture review or when query/path/explain do not surface enough context. Only read
+source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or
+(c) the graph is missing or stale.
+
+Type `/graphify` in Copilot Chat to build or update the graph.
+
+## fm_terraform_provider graphify
+
+When working in `fm_terraform_provider`, treat `graphify-out/graph.json` as the first place to look for architecture, resource relationships, and provider wiring.
+
+If `graphify-out/graph.json` exists, use `graphify query "<question>"` first for codebase questions, `graphify path "<A>" "<B>"` for relationship tracing, and `graphify explain "<concept>"` for focused symbol or concept questions.
+
+Prefer the graph over broad source browsing when the task is about provider structure, resource registration, data source flow, docs generation, or cross-file dependencies. Only read source files directly when you are modifying specific code or the graph is missing the detail you need.
+
+## Terraform skill routing
+
+Only when the current task is inside `fm_terraform_provider`, and only for files, examples, tests, docs, or implementation work under that subtree, prefer the Terraform-specific skills instead of generic editing:
+
+-   Use `terraform-style-guide` for writing or reviewing HCL examples and Terraform configuration.
+-   Use `provider-resources` for resource and data source schema, CRUD, and state management work.
+-   Use `provider-actions` for lifecycle actions and imperative provider behavior.
+-   Use `provider-docs` for Registry docs, generated docs, and schema description updates.
+-   Use `provider-test-patterns` and `terraform-test` for acceptance tests, test scenarios, import testing, and `.tftest.hcl` coverage.
+
+For all other parts of the repo, do not apply these Terraform skill preferences unless the user explicitly asks for Terraform provider help.
