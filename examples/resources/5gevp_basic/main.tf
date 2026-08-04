@@ -10,29 +10,62 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.50.20"
+  fm_address  = "10.114.83.72"
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiNDYxMDgyNDM1NDEzOTY5NCIsInN1YiI6Imdtb2hhbiIsImlhdCI6MTc4MTUxMjMyMywiZXhwIjoxNzg0MTA0MzIzfQ.mlP_dTGCIB42Y3PjpwoH6iKdlxFjDPktDBmdl1WFDhU"
+  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzE3MzIwMDQwNDI4NzQyMyIsInN1YiI6IlRva2VuMSIsImlhdCI6MTc4NDAwNzc5NCwiZXhwIjoxNzg2NTk5Nzk0fQ.Z2hHcfSdCYmQGW5ZjoF6lU9ms7-aehyHLFao3JyOJow"
 }
 
 # Store your existing monitoring session ID locally
 # Format: monitoringSession::<platform>::<uuid>
 locals {
-  monitoring_session_id = "monitoringSession::vmware::0ddfdd2d-2a27-4abc-ae39-3432601bcd53"
+  monitoring_session_id = "monitoringSession::vmware::ddcd0b1a-c5fc-448b-ab58-4d1874287a18"
 }
-
-resource "gigamon_app_5gevp" "minimal" {
+# ---------------------------------------------------------------------------
+# EVP5G (Ericsson vTAP / 5G Cloud) application
+# ---------------------------------------------------------------------------
+resource "gigamon_app_evp5g" "evp5g" {
+  alias                 = "evp5g-app-1"
   monitoring_session_id = local.monitoring_session_id
 
-  network_mode = "standalone"
-
-  traffic_optimization = {
-    enabled = true
-    level   = 5
+  rx_tunnel {
+    listen_ip_address = "10.10.10.101"
+    listen_port        = 4754
+    rx_thread           = 8 
+    dtls                 = "disable"
+    dtls_key_alias       = "evp5g-dtls-key"
   }
 
-  performance_tuning = {
-    cache_size   = 256
-    buffer_depth = 1000
+  tx_tunnel {
+    tx_remote_ip_address = "20.20.20.201"
+    tx_src_port           = 4754
+    tx_dst_port            = 4754
+    tx_thread              = 4
+    tx_src_ip_address      = ["1.1.1.1"]
+  }
+
+  time_server_config {
+    primary_server   = "192.0.2.10"
+    secondary_server = "192.0.2.11"
+  }
+
+  packet_ordering_config {
+    num_egress_flows               = 512
+    egress_flow_timeout_value      = 660
+    num_buckets                    = 50
+    pkts_per_bucket                = 20000
+    bucket_interval                = 1
+    pkt_rx_outside_bucket_interval  = "forward"
+  }
+
+  diagnostic_options {
+    pct_disable = [0, 3, 7,8]
+    tx_disable  = false
+  }
+
+  logging {
+    packet_capture_log_level = "none"
+    csv_logging_level        = "disable"
+    msg_log_level             = "info"
+    log_folder_loc             = "/var/log"
   }
 }
