@@ -668,7 +668,7 @@ func (r *App5GCloud) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		return
 	}
 
-	stateData := mapFM5GCloudToState(ctx, fmData, sessionID, data.Id.ValueString(), nil)
+	stateData := mapFM5GCloudToState(ctx, fmData, sessionID, data.Id.ValueString(), &data)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &stateData)...)
 	if resp.Diagnostics.HasError() {
 		return
