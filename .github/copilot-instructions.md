@@ -31,7 +31,7 @@ Both components are part of a Go workspace (`go.work`).
 
 ```bash
 # Build and install the provider binary to $GOBIN
-go install ./terraform-provider
+go install .
 
 # Build the backend server
 go build ./tf_fm_backend
@@ -45,7 +45,7 @@ tfplugindocs
 
 The provider version is injected at build time:
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.version=v<version>'" ./terraform-provider
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X 'main.version=v<version>'" .
 ```
 
 After rebuilding for local testing, delete `.terraform/` and `.terraform.lock.hcl` in the consumer TF project before re-running `terraform init` (the local plugin path has a fixed version, so checksums change every build).
@@ -119,7 +119,7 @@ Type `/graphify` in Copilot Chat to build or update the graph.
 
 ## fm_terraform_provider graphify
 
-When working in `fm_terraform_provider/terraform-provider`, treat `graphify-out/graph.json` as the first place to look for architecture, resource relationships, and provider wiring.
+When working in `fm_terraform_provider`, treat `graphify-out/graph.json` as the first place to look for architecture, resource relationships, and provider wiring.
 
 If `graphify-out/graph.json` exists, use `graphify query "<question>"` first for codebase questions, `graphify path "<A>" "<B>"` for relationship tracing, and `graphify explain "<concept>"` for focused symbol or concept questions.
 
@@ -127,7 +127,7 @@ Prefer the graph over broad source browsing when the task is about provider stru
 
 ## Terraform skill routing
 
-Only when the current task is inside `fm_terraform_provider/terraform-provider`, and only for files, examples, tests, docs, or implementation work under that subtree, prefer the Terraform-specific skills instead of generic editing:
+Only when the current task is inside `fm_terraform_provider`, and only for files, examples, tests, docs, or implementation work under that subtree, prefer the Terraform-specific skills instead of generic editing:
 
 -   Use `terraform-style-guide` for writing or reviewing HCL examples and Terraform configuration.
 -   Use `provider-resources` for resource and data source schema, CRUD, and state management work.
