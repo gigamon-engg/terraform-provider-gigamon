@@ -1,0 +1,7 @@
+# Example variables for udpgre_validation
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+monitoring_session_id = "<MONITORING_SESSION_ID>"
+remote_ip_address = "<REMOTE_IP_ADDRESS>"

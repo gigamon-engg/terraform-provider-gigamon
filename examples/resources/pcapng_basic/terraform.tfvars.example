@@ -1,0 +1,9 @@
+# Example variables for pcapng_basic
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+connection_id = "<CONNECTION_ID>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+monitoring_domain_id = "<MONITORING_DOMAIN_ID>"
+monitoring_session_id = "<MONITORING_SESSION_ID>"
+remote_ip_address = "<REMOTE_IP_ADDRESS>"

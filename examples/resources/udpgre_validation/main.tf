@@ -10,13 +10,13 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.50.20"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzA5Mjc1OTIxMTk3MzMxMiIsInN1YiI6Ik11c3RhcSIsImlhdCI6MTc4NDEwNjQyNSwiZXhwIjoxNzg2Njk4NDI1fQ.zR7zqinmMeyysIYWEN_Q5pR3wEXZiZTvrp5U_zC_6Xw"
+  api_token   = var.api_token
 }
 
 locals {
-  monitoring_session_id = "monitoringSession::vmware::cc05cec7-2933-411a-a846-1566b65d7c98"
+  monitoring_session_id = var.monitoring_session_id
 }
 
 resource "gigamon_tunnel_in" "udpgre_validation" {
@@ -24,7 +24,7 @@ resource "gigamon_tunnel_in" "udpgre_validation" {
   alias                 = "udpgre-min"
   description           = "UDPGRE ingress tunnel validation example"
   ip_version            = "IPV6"
-  remote_ip             = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+  remote_ip             = var.remote_ip_address
 
   udpgre {
     key              = 0
