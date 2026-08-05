@@ -23,13 +23,13 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address = "10.114.170.57"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiOTEyNTM2MTA2NDc3NjM0MiIsInN1YiI6InRlcnJhZm9ybS10b2tlbiIsImlhdCI6MTc2OTc0MDcyMiwiZXhwIjoxNzc4ODEyNzIyfQ.OZ23mXtCxWaI9CS5_z8o1mmz42HcWk3wdaDqgoiakIw"
+  api_token   = var.api_token
 }
 
 resource "gigamon_esxi_image" "vseries-6-12" {
-  file_name = "/home/vgopu/gigamon-gigavue-vseries-node-6.12.00-550748_amd64.ova"
+  file_name = var.image_file_path
   timeout = 240
 }
 
@@ -41,9 +41,9 @@ resource "gigamon_esxi_monitoring_domain" "terraform-md" {
 resource "gigamon_esxi_connection" "terraform-conn" {
   alias                = "terraform-conn"
   monitoring_domain_id = gigamon_esxi_monitoring_domain.terraform-md.id
-  vcenter_address      = "10.203.226.100"
-  username             = "vgopu@vsphere.local"
-  password             = "1Gigamon#"
+  vcenter_address = var.vcenter_address
+  username             = var.vcenter_username
+  password             = var.vcenter_password
 }
 
 data "gigamon_esxi_datacenter" "terraform-dc" {
@@ -65,7 +65,7 @@ data "gigamon_esxi_hosts" "terraform-hosts" {
     data.gigamon_esxi_cluster.terraform-cluster.cluster_moref,
   ]
   hostname = [
-    "10.115.169.56"
+    var.esxi_host_ip
   ]
 
 }
@@ -81,7 +81,7 @@ resource "gigamon_esxi_fabric" "terraform-fabric" {
       host_moref = host_vm_spec.value.host_moref
       host_name = host_vm_spec.value.hostname
       datastore_moref = host_vm_spec.value.datastore_cluster_moref.fm_terraform_ds
-      admin_password = "gigamon123A!!"
+      admin_password = var.vm_admin_password
       name = "Terraform-VSeries"
       management_interface = {
         network_moref = host_vm_spec.value.network_moref.VM-Network
@@ -136,7 +136,7 @@ resource "gigamon_app_dedup" "terraform-dedup" {
 resource "gigamon_tunnel_out" "terraform_tun" {
   alias                 = "terraform-tunnel-1"
   monitoring_session_id = gigamon_monitoring_session.terraform-ms.id
-  remote_ip = "10.114.154.4"
+  remote_ip             = var.remote_ip_address
   vxlan {
    vni = 1
    destination_port = 1

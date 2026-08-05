@@ -1,0 +1,6 @@
+# Example variables for 5g_sbi_ip_mappings_basic
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+csv_file_path = "<CSV_FILE_PATH>"
+fm_ip_address = "<FM_IP_ADDRESS>"
