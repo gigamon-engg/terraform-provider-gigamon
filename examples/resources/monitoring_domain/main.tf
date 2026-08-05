@@ -37,7 +37,7 @@ terraform {
 # should use secure mecahnisms like vault
 
 provider "gigamon" {
-  fm_address = "10.114.50.20"
+  fm_address  = var.fm_ip_address
 
   # skip_verify is default false, which implies that the certificate presented by FM must be
   # a valid certificate and will be verified. For demo purpose this is skipped, but should not
@@ -47,12 +47,12 @@ provider "gigamon" {
   # this token is generated using FM API, via  the user management section. For best
   # security rotate this token often and also use mecahnisms like vault to prevent exposing
   # this in plain text in the configuration files
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiNDYxMDgyNDM1NDEzOTY5NCIsInN1YiI6Imdtb2hhbiIsImlhdCI6MTc4MTUxMjMyMywiZXhwIjoxNzg0MTA0MzIzfQ.mlP_dTGCIB42Y3PjpwoH6iKdlxFjDPktDBmdl1WFDhU"
+  api_token   = var.api_token
 }
 
 import {
   to = gigamon_esxi_monitoring_domain.my-md
-  id = "3f7f128d-1712-44a3-955e-00f13bec6ad4"
+  id = var.resource_import_id
 }
 
 resource "gigamon_esxi_monitoring_domain" "my-md" {
