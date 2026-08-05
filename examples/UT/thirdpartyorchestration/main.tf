@@ -25,17 +25,17 @@ terraform {
 
 //FM Client OpenStack 3PO
 provider "gigamon" {
-  fm_address = "10.115.35.149"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzk3NzY0NzgxMTI0MTI2NiIsInN1YiI6InRlcnJhZm9ybS10b2tlbiIsImlhdCI6MTc3NDAwMTY1OCwiZXhwIjoxNzgzMDczNjU4fQ.WmoJ9CfoTCVB8XgDWcQYtZittiSUkHphfGxhoYA6IiE"
+  api_token   = var.api_token
 }
 
 /*
 //FM Client ESXi 3PO
 provider "gigamon" {
-  fm_address = "10.114.170.47"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzM0MjYyODgzNDMzNjMwOSIsInN1YiI6InRlcnJhZm9ybS10b2tlbiIsImlhdCI6MTc3NDAxNTI2NCwiZXhwIjoxNzgzMDg3MjY0fQ.J3gHLse9Y4t_3qWj4UM5uj-kcbR1oIZALo0iWyfpzs0"
+  api_token   = var.api_token
 }
 */
 
@@ -209,7 +209,7 @@ resource "gigamon_app_dedup" "terraform-dedup" {
 resource "gigamon_tunnel_out" "terraform-tunnel" {
   alias                 = "terraform-tunnel"
   monitoring_session_id = gigamon_monitoring_session.terraform-ms.id
-  remote_ip = "40.40.4.6"
+  remote_ip             = var.remote_ip_address
   mtu = 1400
 
   vxlan {
@@ -244,7 +244,7 @@ resource "gigamon_link" "map_to_tunnel" {
 // Secure Tunnel Certificates Configuration
 resource "gigamon_cloud_ca_cert" "ca_cert" {
   alias = "UCTV_CA_CERT2"
-  certificate_path   = "/home/vgopu/certs2/UCTV.crt"
+  certificate_path = var.certificate_path
 }
 
 import {
@@ -255,8 +255,8 @@ import {
 resource "gigamon_cloud_ssl_keys" "ssl_keys" {
   alias = "VSN_SSK_KEYS2"
   key_store_alias    = "DEFAULT_CLOUD_SSL_KS"
-  certificate_path = "/home/vgopu/certs2/VSN.crt"
-  private_key_path = "/home/vgopu/certs2/VSN.key"
+  certificate_path = var.certificate_path
+  private_key_path = var.private_key_path
 }
 
 import {
