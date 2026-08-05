@@ -5,13 +5,8 @@ variable "api_token" {
   type        = string
 }
 
-variable "esxi_host_ip_1" {
-  description = "Value for esxi_host_ip_1"
-  type        = string
-}
-
-variable "esxi_host_ip_2" {
-  description = "Value for esxi_host_ip_2"
+variable "esxi_host_ip" {
+  description = "Value for esxi_host_ip"
   type        = string
 }
 
@@ -22,6 +17,11 @@ variable "fm_ip_address" {
 
 variable "image_file_path" {
   description = "Value for image_file_path"
+  type        = string
+}
+
+variable "remote_ip_address" {
+  description = "Value for remote_ip_address"
   type        = string
 }
 

@@ -7,16 +7,16 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.83.72"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzE3MzIwMDQwNDI4NzQyMyIsInN1YiI6IlRva2VuMSIsImlhdCI6MTc4NDAwNzc5NCwiZXhwIjoxNzg2NTk5Nzk0fQ.Z2hHcfSdCYmQGW5ZjoF6lU9ms7-aehyHLFao3JyOJow"
+  api_token   = var.api_token
 }
 
 
 locals {
-  monitoring_domain_id = "monitoringDomin::vmware::b798affc-f440-410a-9796-f0dbfe9c5da8"
-  connection_id = "connection::vmware::6df491ae-757b-4d51-91e4-79ce35277db5"
-  monitoring_session_id = "monitoringSession::vmware::ddcd0b1a-c5fc-448b-ab58-4d1874287a18"
+  monitoring_domain_id = var.monitoring_domain_id
+  connection_id = var.connection_id
+  monitoring_session_id = var.monitoring_session_id
 }
 
 ########################################
@@ -57,7 +57,7 @@ resource "gigamon_tunnel_in" "udpgre" {
   alias                 = "udpgre-in"
 
   description = "UDPGRE ingress tunnel"
-  remote_ip   = "9.9.9.9"
+  remote_ip             = var.remote_ip_address
   udpgre {
     key              = 10
     destination_port = 4754
@@ -70,7 +70,7 @@ resource "gigamon_tunnel_out" "vxlan_out" {
   alias                 = "vxlan-out"
 
   description = "VXLAN egress tunnel"
-  remote_ip   = "1.1.2.3"
+  remote_ip             = var.remote_ip_address
 
   vxlan {
     vni              = 10   # 1–16777215

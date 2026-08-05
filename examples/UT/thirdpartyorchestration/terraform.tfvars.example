@@ -1,0 +1,8 @@
+# Example variables for thirdpartyorchestration
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+certificate_path = "<CERTIFICATE_PATH>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+private_key_path = "<PRIVATE_KEY_PATH>"
+remote_ip_address = "<REMOTE_IP_ADDRESS>"
