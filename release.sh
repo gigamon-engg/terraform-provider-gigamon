@@ -70,14 +70,22 @@ function validate_arguments {
 
 
     # Checkout the requestd branch and make sure the local repo is clean
-    if ! git checkout $1 > /dev/null 2>&1 ; then
+    if ! git checkout $1 ; then
         echo "checkout of the requested branch $1 failed. See the above error message"
         exit 1
     fi
 
-    if ! git pull > /dev/null 2>&1 ; then
-        echo "pull of the requested branch $1 failed. See the above error message"
-        exit 1
+    # Pull from upstream if configured; otherwise pull directly from origin/branch.
+    if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" > /dev/null 2>&1 ; then
+        if ! git pull --ff-only ; then
+            echo "pull of the requested branch $1 failed. See the above error message"
+            exit 1
+        fi
+    else
+        if ! git pull --ff-only origin $1 ; then
+            echo "pull of the requested branch $1 failed. See the above error message"
+            exit 1
+        fi
     fi
 
     # Make sure that this is a clean local repo.
@@ -104,13 +112,13 @@ function validate_arguments {
 # Given the version, os and arch sets up the artifact for this combination
 function build_artifact {
     # Build this combination first
-    if ! CGO_ENABLED="0" GOOS=$3 GOARCH=$4 go build $5 -ldflags "-X 'main.version=v$2'" ./terraform-provider; then
+    if ! CGO_ENABLED="0" GOOS=$3 GOARCH=$4 go build $5 -ldflags "-X 'main.version=v$2'" .; then
         echo "Unable to build for $3 and $4"
         exit 1
     fi
 
     # Form the artifact for this version/os/arch
-    terraform-provider/build/build.py --binary terraform-provider-gigamon --os $3 --arch $4 --version $2 --base_dir $1
+    build/build.py --binary terraform-provider-gigamon --os $3 --arch $4 --version $2 --base_dir $1
 }
 
 
@@ -123,7 +131,7 @@ build_variants["windows"]="amd64"
 # Validate the arguments, and also change our working directory to the root of the git repo
 # base_name will contain the directory where the repo is present
 
-validate_arguments $*
+validate_arguments "$@"
 if [[ $# -eq 2 ]] && [[ ${2} == "true" ]]; then
     code_coverage="-cover"
 else
