@@ -1,0 +1,7 @@
+# Example variables for images
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+image_file_path = "<IMAGE_FILE_PATH>"
+resource_import_id = "<RESOURCE_IMPORT_ID>"

@@ -39,7 +39,7 @@ terraform {
 # should use secure mecahnisms like vault
 
 provider "gigamon" {
-  fm_address = "10.114.202.170"
+  fm_address  = var.fm_ip_address
 
   # skip_verify is default false, which implies that the certificate presented by FM must be
   # a valid certificate and will be verified. For demo purpose this is skipped, but should not
@@ -49,7 +49,7 @@ provider "gigamon" {
   # this token is generated using FM API, via  the user management section. For best
   # security rotate this token often and also use mecahnisms like vault to prevent exposing
   # this in plain text in the configuration files
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiNTE4NDAwMjAzNzcwMTI4MSIsInN1YiI6ImphbmEtbmV3LXRva2VuIiwiaWF0IjoxNzc1MTE4MjMzLCJleHAiOjE3ODI4OTQyMzN9.KCEnm-_EL-janUXR75xfk02Rh8ur-SdQmsPFqKLuYB8"
+  api_token   = var.api_token
 }
 
 
@@ -68,11 +68,11 @@ resource "gigamon_esxi_connection" "my-conn" {
   alias = "jana-conn-original"
   monitoring_domain_id = gigamon_esxi_monitoring_domain.my-md.id
   maximum_nodes_per_host = 5
-  vcenter_address = "10.115.35.31"
-  username = "administrator@vsphere.local"
-  password = "Gigamon123!"
+  vcenter_address = var.vcenter_address
+  username = var.vcenter_username
+  password = var.vcenter_password
   password_version = 2
-  # password = "Gigamon123!abc"
+  # password = var.vcenter_password
 }
 
 
@@ -116,22 +116,22 @@ data "gigamon_esxi_hosts" "my-hosts" {
   # to restrict the hosts further
 
   hostname = [
-    "10.115.43.52",
-    # "10.115.43.56",
+    var.esxi_host_ip_1,
+    # var.esxi_host_ip_2,
   ]
 }
 
 
 # Upload the Vseries Image to FM.
 resource "gigamon_esxi_image" "vseries-6-14" {
-  file_name = "/home/jana/gigamon-gigavue-vseries-node-6.14.00-563398_amd64.ova"
+  file_name = var.image_file_path
 
   # Adjust the timeout to the needed value based on the size of the file and network speed
   timeout = 240
 }
 
 resource "gigamon_esxi_image" "vseries-6-14-01" {
-  file_name = "/home/jana/gigamon-gigavue-vseries-node-6.14.00-564867_amd64.ova"
+  file_name = var.image_file_path
 
   # Adjust the timeout to the needed value based on the size of the file and network speed
   timeout = 240
@@ -146,7 +146,7 @@ locals {
       host_name = host_spec.hostname
       host_moref = host_spec.host_moref
       datastore_moref = host_spec.datastore_moref.NAS-52-4TB
-      admin_password = "gigamon123A!"
+      admin_password = var.vm_admin_password
       name_server = [
         "8.8.8.8",
         "8.8.4.4",

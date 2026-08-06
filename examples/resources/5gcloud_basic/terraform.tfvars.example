@@ -1,0 +1,9 @@
+# Example variables for 5gcloud_basic
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+monitoring_session_id = "<MONITORING_SESSION_ID>"
+rx_listen_ip_address = "<RX_LISTEN_IP_ADDRESS>"
+tx_remote_ip_address = "<TX_REMOTE_IP_ADDRESS>"
+tx_source_ip_address = "<TX_SOURCE_IP_ADDRESS>"

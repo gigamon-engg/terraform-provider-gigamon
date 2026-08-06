@@ -12,15 +12,15 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.83.72"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzE3MzIwMDQwNDI4NzQyMyIsInN1YiI6IlRva2VuMSIsImlhdCI6MTc4NDAwNzc5NCwiZXhwIjoxNzg2NTk5Nzk0fQ.Z2hHcfSdCYmQGW5ZjoF6lU9ms7-aehyHLFao3JyOJow"
+  api_token   = var.api_token
 }
 
 # Store your existing monitoring session ID locally
 # Format: monitoringSession::<platform>::<uuid>
 locals {
-  monitoring_session_id = "monitoringSession::vmware::ddcd0b1a-c5fc-448b-ab58-4d1874287a18"
+  monitoring_session_id = var.monitoring_session_id
 }
 
 resource "gigamon_app_5gcloud" "minimal" {
@@ -31,7 +31,7 @@ resource "gigamon_app_5gcloud" "minimal" {
   rx_tunnel = [
     {
       rx_type          = "vxlan"
-      listen_ipaddress = "1.1.1.10"
+      listen_ipaddress = var.rx_listen_ip_address
       listen_port      = 2
       from_port        = 3
       rx_vni_id        = 4
@@ -41,8 +41,8 @@ resource "gigamon_app_5gcloud" "minimal" {
 
   tx_tunnel = {
     tx_type             = "l2gre"
-    tx_remote_ipaddress = "2.2.2.28"
-    tx_src_ipaddress    = "3.3.3.3"
+    tx_remote_ipaddress = var.tx_remote_ip_address
+    tx_src_ipaddress    = var.tx_source_ip_address
     tx_src_port         = 7
     tx_dst_port         = 6
     l2gre_key           = 8

@@ -1,0 +1,12 @@
+# Example variables for esxi_tapping
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+esxi_host_ip = "<ESXI_HOST_IP>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+image_file_path = "<IMAGE_FILE_PATH>"
+remote_ip_address = "<REMOTE_IP_ADDRESS>"
+vcenter_address = "<VCENTER_ADDRESS>"
+vcenter_password = "<VCENTER_PASSWORD>"
+vcenter_username = "<VCENTER_USERNAME>"
+vm_admin_password = "<VM_ADMIN_PASSWORD>"
