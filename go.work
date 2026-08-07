@@ -14,5 +14,4 @@ use (
 	./internal/securetunnelcertsresources
 	./internal/thirdpartyorchestrationdatasources
 	./internal/thirdpartyorchestrationresources
-	./tf_fm_backend
 )
