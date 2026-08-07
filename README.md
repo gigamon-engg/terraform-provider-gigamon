@@ -1,98 +1,109 @@
-<!--
-Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+# terraform-provider-gigamon
 
-Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+Terraform provider for **Gigamon Fabric Manager (FM)**, supporting FM version 6.14 and later.
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, version 3 of the License.
+## Quick start — Provider
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
+You can use the provider in three common ways:
 
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>
--->
+* use the published provider from the registry
+* build it locally from this repository (including your fork), or
+* download the published latest release artifact from GitHub Releases.
 
-Gigamon FM Terraform Provider
------------------------------
+### Option 1: Use the published provider from the registry
+
+Published provider: [Gigamon provider on Terraform Registry](https://registry.terraform.io/providers/gigamon-engg/gigamon/{version-number})
+
+```hcl
+terraform {
+  required_providers {
+    gigamon = {
+      source  = "gigamon-engg/gigamon"
+      version = ">= 6.14"
+    }
+  }
+}
+
+provider "gigamon" {
+  fm_address  = "<your-fm-host>"
+  skip_verify = true
+  api_token   = "<your-fm-api-token>" # or set the FM_API_TOKEN env var
+}
+```
 
 
-This provides a Terraform provider for Gigamon FM Cloud solutions. 
+### Option 2: Build locally from this repository or your fork
 
-Installation
-------------
-Currently this is not being hosted on any external TF repository. Users will have to have this in
-their local system
+```bash
+go build -o terraform-provider-gigamon
+```
 
-Please copy the terraform binary "terraform-provider-gigamon" to the following directory in your
-system
+Install for local Terraform use:
 
-~/.terraform.d/plugins/local/gigamon/gigamon/1.0.0/linux_amd64/terraform-provider-gigamon
+```bash
+mkdir -p ~/.terraform.d/plugins/local/gigamon/gigamon/{version-number}/linux_amd64
+cp terraform-provider-gigamon \
+  ~/.terraform.d/plugins/local/gigamon/gigamon/{version-number}/linux_amd64/
+```
 
-Note: That we only support linux-amd64 binary now, and if we wamt MAC or other OS than we need
-to build the binary for those systems
+### Option 3: Download from the GitHub release
 
-Installation and Testing For developers
-----------------------------------------
-  - Create the following in your home directory
-    .terraform.d/plugins/local/gigamon/gigamon/1.0.0/linux_amd64/
+Download the latest release ZIP from the GitHub Releases page, extract it, rename the binary to `terraform-provider-gigamon` if needed, and place it in the same local Terraform plugin path shown above.
 
-  - Please setup the environment variable GOBIN to the following
-    <your home>/.terraform.d/plugins/local/gigamon/gigamon/1.0.0/linux_amd64/
+Release page:
 
-  - After any changes to the source
-      go to the base directory of the repo i.e. to "fm_terraform_provider"
-      execute go install .
-      This will generate the binary and also install it in the directory pointed to by GOBIN
+[Gigamon provider release](https://github.com/gigamon-engg/terraform-provider-gigamon/releases)
 
-  - Using the new version and testing in TF modules
-     Currently we are not yet versioning the module, so every build will overwrite the same
-       version
-    after doing the above go install, than go to the TF directory (where you have your main.tf
-      or other files)
-    rm the .terraform directory and .terraform.lock.hcl (this is because they will have the 
-       checksum of the previous build and will not match the current build). We will fix this
-       by either introducing versioning or by ensuring that we upload the same checksum for
-       every build
-    do a terraform init (which will download the module again and in our case just get from
-        local)
-    then proceed with terraform plan or terraform apply etc. as required.
+Install path:
 
-Generating Docs
-----------------
-Run tfplugindocs from the base directory, and it will produce the markdown files under the doc
-  directory
+```bash
+mkdir -p ~/.terraform.d/plugins/local/gigamon/gigamon/{version-number}/linux_amd64
+cp terraform-provider-gigamon \
+  ~/.terraform.d/plugins/local/gigamon/gigamon/{version-number}/linux_amd64/
+```
 
-Run the convert_md_html.py and it will traverse the doc directory and convert all the .md files
-  to the corresponding html files
+Whether you build from your fork or download the release artifact, the Terraform usage is the same after the binary is placed in the local plugin directory.
 
-Copy these to the /var/www directory and will get rendered properly.
+### Terraform configuration
 
-Resource Security Checks (for developers)
------------------------------------------
-When adding or updating resources/data sources, use the security checklist at
-docs/resource_security_checklist.md.
+```hcl
+terraform {
+  required_providers {
+    gigamon = {
+      source  = "local/gigamon/gigamon"
+      version = "6.14.0"
+    }
+  }
+}
 
-Run the lightweight lint from repo root:
+provider "gigamon" {
+  fm_address  = "<your-fm-host>"
+  skip_verify = true
+  api_token   = "<your-fm-api-token>" # or set the FM_API_TOKEN env var
+}
+```
 
-  bash tools/security_lint.sh
+See `examples/` for end-to-end configurations and `docs/` for the full resource and data source reference.
 
-You can also scan specific files:
+## Development
 
-  bash tools/security_lint.sh internal/commonresources/apps.go
+```bash
+# Build provider
+go build .
 
-Examples and Usages
--------------------
+# Run all tests
+go test ./...
+```
 
-Current Supported Features
---------------------------
+Generated documentation under `docs/` is produced by [`tfplugindocs`](https://github.com/hashicorp/terraform-plugin-docs).
 
-Future Support Planned
-----------------------
+## License
 
-Bulding a website for static navigation using left sider bar 
+See [LICENSE](LICENSE)
 
-https://www.w3schools.com/howto/howto_css_fixed_sidebar.asp
+
+---
+
+## Sources
+
+- [Gigamon provider release](https://github.com/gigamon-engg/terraform-provider-gigamon/releases)

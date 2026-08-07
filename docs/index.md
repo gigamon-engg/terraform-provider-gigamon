@@ -16,10 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>
 -->
 
-<div class="page-header">
-  <h1>Gigamon Provider and backend</h1>
-  <a href="/logout" class="reset-link">Reset view</a>
-</div>
+Compatible with FM version 6.14 and later.
 
 The Gigamon provider allows users to configure and maintain Gigamon FM Cloud configurations. This allows the users to configure and manage the Monitoring Domain, Gigamon Fabric and Policies.
 
