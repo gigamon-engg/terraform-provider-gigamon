@@ -1,3 +1,21 @@
+<!--
+Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+
+Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>
+-->
+
 # Copilot Instructions
 
 ## Repository Overview
@@ -42,7 +60,6 @@ Each internal package is its own Go module (declared in `go.work`):
 | `terraform-provider/internal/provider` | Provider registration, auth config |
 | `terraform-provider/internal/commonresources` | Resources shared across all platforms (Monitoring Session, apps, maps, tunnels, etc.) |
 | `terraform-provider/internal/commonutils` | TypedID system, MS update helpers |
-| `terraform-provider/internal/commonactions` | TF actions (position) |
 | `terraform-provider/internal/esxiresources` | VMware ESXi-specific resources |
 | `terraform-provider/internal/esxidatasources` | VMware ESXi data sources |
 | `terraform-provider/internal/thirdpartyorchestrationresources` | Third-party/anyCloud resources |

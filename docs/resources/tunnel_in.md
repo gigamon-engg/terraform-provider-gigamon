@@ -38,7 +38,7 @@ Supported tunnel types for `gigamon_tunnel_in`:
 - `erspan`
 - `tlspcapng` (TLS-PCAPNG, configured via `tls_pcapng` block)
 
-> `udp` and `udpgre` are **not supported** for ingress tunnels in this provider.  
+> `udp` and `udpgre` are supported for ingress tunnels in this provider.  
 > `udpgre` (GRE over UDP) and would require a PCAPNG application that is not in scope.
 
 ---

@@ -1,4 +1,19 @@
-# Copyright (c) Gigamon Inc
+#  Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+#
+#  Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, version 3 of the License.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>
+
 
 # Example usge for image resource
 
@@ -21,7 +36,7 @@ terraform {
 # should use secure mecahnisms like vault
 
 provider "gigamon" {
-  fm_address = "10.114.202.120"
+  fm_address  = var.fm_ip_address
 
   # skip_verify is default false, which implies that the certificate presented by FM must be
   # a valid certificate and will be verified. For demo purpose this is skipped, but should not
@@ -31,17 +46,17 @@ provider "gigamon" {
   # this token is generated using FM API, via  the user management section. For best
   # security rotate this token often and also use mecahnisms like vault to prevent exposing
   # this in plain text in the configuration files
-  api_token = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiOTIxNjgzMDk0MjA0ODQ3NSIsInN1YiI6InRmLXRva2VuIiwiaWF0IjoxNzYyMzMwMjk4LCJleHAiOjE3NjQ5MjIyOTh9.WPPhWxx_MeG40RgIJYZVm0zt1v-ahyutPRQzUVWVf_0"
+  api_token   = var.api_token
 }
 
 import {
   to = gigamon_esxi_image.vseries-6-12-00
-  id = "gigamon-gigavue-vseries-node-6.12.00-550748_amd64.ova:/home/jana/gigamon-gigavue-vseries-node-6.12.00-550748_amd64.ova:180"
+  id = var.resource_import_id
 }
 
 
 resource "gigamon_esxi_image" "vseries-6-12-00" {
-  file_name = "/home/jana/gigamon-gigavue-vseries-node-6.12.00-550748_amd64.ova"
+  file_name = var.image_file_path
   timeout = 180
 }
 

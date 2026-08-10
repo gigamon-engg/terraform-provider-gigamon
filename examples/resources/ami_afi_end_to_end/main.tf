@@ -10,15 +10,15 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.50.20"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiNDYxMDgyNDM1NDEzOTY5NCIsInN1YiI6Imdtb2hhbiIsImlhdCI6MTc4MTUxMjMyMywiZXhwIjoxNzg0MTA0MzIzfQ.mlP_dTGCIB42Y3PjpwoH6iKdlxFjDPktDBmdl1WFDhU"
+  api_token   = var.api_token
 }
 
 # Store your existing monitoring session ID locally
 # Format: monitoringSession::<platform>::<uuid>
 locals {
-  monitoring_session_id = "monitoringSession::vmware::0ddfdd2d-2a27-4abc-ae39-3432601bcd53"
+  monitoring_session_id = var.monitoring_session_id
 }
 
 # Create an AMI application using the monitoring session
@@ -63,7 +63,7 @@ resource "gigamon_tunnel_out" "ami_udp_out" {
   monitoring_session_id = local.monitoring_session_id
   alias                 = "ami-udp-out-example"
   description           = "UDP egress tunnel for AMI end-to-end example"
-  remote_ip             = "198.51.100.10"
+  remote_ip             = var.remote_ip_address
 
   udp = {
     source_port      = 50000

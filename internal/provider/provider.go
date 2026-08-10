@@ -1,4 +1,18 @@
-// Copyright (c) Gigamon, Inc.
+//  Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+//
+//  Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, version 3 of the License.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program. If not, see <https://www.gnu.org/licenses/>
 
 // Provider package for Gigamon FM product. Implements the provider for cloud functioanlities
 
@@ -9,7 +23,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/function"
@@ -18,7 +31,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"terraform-provider-gigamon/internal/commonactions"
 	"terraform-provider-gigamon/internal/commondatasources"
 	"terraform-provider-gigamon/internal/commonresources"
 	"terraform-provider-gigamon/internal/esxidatasources"
@@ -31,7 +43,7 @@ import (
 )
 
 // Ensure GigamonProvider satisfies various provider interfaces.
-var _ provider.ProviderWithActions = &GigamonProvider{}
+var _ provider.Provider = &GigamonProvider{}
 
 // GigamonProvider is the implementation of Gigamon Provider
 type GigamonProvider struct {
@@ -198,12 +210,6 @@ func (p *GigamonProvider) DataSources(ctx context.Context) []func() datasource.D
 
 func (p *GigamonProvider) Functions(ctx context.Context) []func() function.Function {
 	return nil
-}
-
-func (p *GigamonProvider) Actions(_ctx context.Context) []func() action.Action {
-	return []func() action.Action{
-		commonactions.NewPosition,
-	}
 }
 
 func New(version string) func() provider.Provider {

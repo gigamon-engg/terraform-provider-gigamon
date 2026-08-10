@@ -154,13 +154,15 @@ Topology notes:
 
 ## Mode Behavior + Dependency Matrix
 
-| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
-|---|---|---|
-| Always | `exporter_config` must be present | Null/omitted `exporter_config` is rejected |
-| `exporter_config.monitor` omitted | Provider supplies default monitor object | N/A |
-| Any `exporter_config.monitor.timeout` value | Effective value must be `300` | Values other than `300` are rejected |
-| `mgmt_interface` omitted | Defaults to `internal` | N/A |
-| `mgmt_interface` set | `internal` or `external` | Any other value is rejected |
+```text
+Condition                               | Required / Allowed                    | Not Allowed / Enforced Behavior
+--------------------------------------- | ------------------------------------- | -----------------------------------------------
+Always                                  | exporter_config must be present       | Null or omitted exporter_config is rejected
+exporter_config.monitor omitted         | Provider supplies default monitor     | N/A
+exporter_config.monitor.timeout set     | Effective value must be 300           | Values other than 300 are rejected
+mgmt_interface omitted                  | Defaults to internal                  | N/A
+mgmt_interface set                      | internal or external                  | Any other value is rejected
+```
 
 ---
 

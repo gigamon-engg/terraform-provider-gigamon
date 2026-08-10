@@ -10,15 +10,15 @@ terraform {
 }
 
 provider "gigamon" {
-  fm_address  = "10.114.83.72"
+  fm_address  = var.fm_ip_address
   skip_verify = true
-  api_token   = "eyJhbGciOiJIUzI1NiJ9.eyJ0b2tlbklkIjoiMzE3MzIwMDQwNDI4NzQyMyIsInN1YiI6IlRva2VuMSIsImlhdCI6MTc4NDAwNzc5NCwiZXhwIjoxNzg2NTk5Nzk0fQ.Z2hHcfSdCYmQGW5ZjoF6lU9ms7-aehyHLFao3JyOJow"
+  api_token   = var.api_token
 }
 
 # Store your existing monitoring session ID locally
 # Format: monitoringSession::<platform>::<uuid>
 locals {
-  monitoring_session_id = "monitoringSession::vmware::ddcd0b1a-c5fc-448b-ab58-4d1874287a18"
+  monitoring_session_id = var.monitoring_session_id
 }
 # ---------------------------------------------------------------------------
 # EVP5G (Ericsson vTAP / 5G Cloud) application

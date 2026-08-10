@@ -249,14 +249,16 @@ Core fields:
 
 ## Mode Behavior + Dependency Matrix
 
-| Condition | Required/Allowed | Not Allowed / Enforced Behavior |
-|---|---|---|
-| `app_metadata.exporters[*].exporter_config.type = "cef"` | `cef` block required | `netflow` block must not be set |
-| `app_metadata.exporters[*].exporter_config.type = "netflow"` | `netflow` block required; `netflow.version` required (`ipfix`, `v5`, `v9`) | `cef` block must not be set |
-| `flow_behavior = "bidir"` with netflow exporter | `netflow.version = ipfix` | `netflow.version = v5` or `v9` is rejected |
-| Any exporter entry | `exporter_config` required; `max_pkt_size` required (`0` or `1280..9001`) | Missing `exporter_config` is rejected |
-| `persist_profile_config` present | `persist_profile_config.alias` required | Missing alias is rejected |
-| IPv4 next-header toggles | Use `ipv6.next_header` when needed | `app_metadata.match.ipv4.next_header` and `app_profile_config[*].ipv4.next_header` are rejected |
+```text
+Condition                                                   | Required / Allowed                                         | Not Allowed / Enforced Behavior
+----------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------
+exporter_config.type = cef                                  | cef block required                                          | netflow block must not be set
+exporter_config.type = netflow                              | netflow block required; version required (ipfix/v5/v9)      | cef block must not be set
+flow_behavior = bidir with netflow exporter                 | netflow.version = ipfix                                     | netflow.version = v5 or v9 is rejected
+Any exporter entry                                          | exporter_config required; max_pkt_size required             | Missing exporter_config is rejected
+persist_profile_config present                              | persist_profile_config.alias required                       | Missing alias is rejected
+IPv4 next-header toggles                                    | Use ipv6.next_header when needed                            | ipv4.next_header in match/app_profile_config is rejected
+```
 
 ### `app_metadata` block overview
 
