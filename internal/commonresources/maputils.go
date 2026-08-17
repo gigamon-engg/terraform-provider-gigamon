@@ -177,6 +177,105 @@ type GreKeyRuleModel struct {
 	GreKeySubset types.String `tfsdk:"gre_key_subset"`
 }
 
+// ===== Phase 2 Map Conditions (13 new types) =====
+
+// GTP-U TEID (Tunnel Endpoint ID)
+type GtpuTeidModel struct {
+	Type       types.String `tfsdk:"type"`
+	Pos        types.Int32  `tfsdk:"nested_level_count"`
+	TeidMin    types.Int32  `tfsdk:"teid_min"`
+	TeidMax    types.Int32  `tfsdk:"teid_max"`
+	TeidSubset types.String `tfsdk:"teid_subset"`
+}
+
+// Host Name
+type HostNameModel struct {
+	Type       types.String `tfsdk:"type"`
+	SrcHostPrefix types.String `tfsdk:"src_host_prefix"`
+}
+
+// IPv6 Flow Label
+type Ipv6FlowLabelModel struct {
+	Type     types.String `tfsdk:"type"`
+	LabelMin types.Int32  `tfsdk:"label_min"`
+	LabelMax types.Int32  `tfsdk:"label_max"`
+}
+
+// IPv6 Next Header
+type Ipv6NextHeaderModel struct {
+	Type         types.String `tfsdk:"type"`
+	HeaderMin    types.Int32  `tfsdk:"header_min"`
+	HeaderMax    types.Int32  `tfsdk:"header_max"`
+	HeaderSubset types.String `tfsdk:"header_subset"`
+}
+
+// MPLS Label
+type MplsLabelModel struct {
+	Type     types.String `tfsdk:"type"`
+	Pos      types.Int32  `tfsdk:"pos"`
+	ValueMin types.Int32  `tfsdk:"value_min"`
+	ValueMax types.Int32  `tfsdk:"value_max"`
+	Subnet   types.String `tfsdk:"subnet"`
+}
+
+// Port Destination (TCP/UDP)
+type PortDestinationModel struct {
+	Type    types.String `tfsdk:"type"`
+	PortMin types.Int32  `tfsdk:"port_min"`
+	PortMax types.Int32  `tfsdk:"port_max"`
+}
+
+// Port Source (TCP/UDP)
+// type PortSourceModel struct {
+// 	Type    types.String `tfsdk:"type"`
+// 	PortMin types.Int32  `tfsdk:"port_min"`
+// 	PortMax types.Int32  `tfsdk:"port_max"`
+// }
+
+// // TCP Control Flags
+// type TcpControlModel struct {
+// 	Type  types.String `tfsdk:"type"`
+// 	Flags types.String `tfsdk:"flags"` // e.g. "SYN", "ACK", "FIN", comma-separated
+// }
+
+// // VLAN ID
+// type VlanModel struct {
+// 	Type       types.String `tfsdk:"type"`
+// 	Pos        types.Int32  `tfsdk:"nested_level_count"`
+// 	VlanMin    types.Int32  `tfsdk:"vlan_min"`
+// 	VlanMax    types.Int32  `tfsdk:"vlan_max"`
+// 	VlanSubset types.String `tfsdk:"vlan_subset"`
+// }
+
+// // VN-Tag Destination VIF ID
+// type VntagDstVifIdModel struct {
+// 	Type   types.String `tfsdk:"type"`
+// 	VifMin types.Int32  `tfsdk:"vif_min"`
+// 	VifMax types.Int32  `tfsdk:"vif_max"`
+// }
+
+// // VN-Tag Source VIF ID
+// type VntagSrcVifIdModel struct {
+// 	Type   types.String `tfsdk:"type"`
+// 	VifMin types.Int32  `tfsdk:"vif_min"`
+// 	VifMax types.Int32  `tfsdk:"vif_max"`
+// }
+
+// // VN-Tag VIF List ID
+// type VntagVifListIdModel struct {
+// 	Type      types.String `tfsdk:"type"`
+// 	ListIdMin types.Int32  `tfsdk:"list_id_min"`
+// 	ListIdMax types.Int32  `tfsdk:"list_id_max"`
+// }
+
+// // VXLAN ID
+// type VxlanIdModel struct {
+// 	Type        types.String `tfsdk:"type"`
+// 	VxlanMin    types.Int32  `tfsdk:"vxlan_min"`
+// 	VxlanMax    types.Int32  `tfsdk:"vxlan_max"`
+// 	VxlanSubset types.String `tfsdk:"vxlan_subset"`
+// }
+
 // The model for the rules, which is a combination of the above rule elements with an OR between
 // them. This will translate to one element of passRule/dropRule in the swagger with the
 // elements of the struct representing one element of the matches array
@@ -202,6 +301,20 @@ type RulesModel struct {
 	Ipv4Ttl           *Ip4TtlRuleModel   `tfsdk:"ipv4_ttl"`
 	Ipv4Tos           *Ip4TosRuleModel   `tfsdk:"ipv4_tos"`
 	GreKey            *GreKeyRuleModel   `tfsdk:"gre_key"`
+	// Phase 2 new conditions
+	GtpuTeid        *GtpuTeidModel        `tfsdk:"gtp_teid"`
+	HostName        *HostNameModel        `tfsdk:"host_name"`
+	Ipv6FlowLabel   *Ipv6FlowLabelModel   `tfsdk:"ipv6_flow_label"`
+	Ipv6NextHeader  *Ipv6NextHeaderModel  `tfsdk:"ipv6_next_header"`
+	MplsLabel       *MplsLabelModel       `tfsdk:"mpls_label"`
+	PortDestination *PortDestinationModel `tfsdk:"port_destination"`
+	// PortSource      *PortSourceModel      `tfsdk:"port_source"`
+	// TcpControl      *TcpControlModel      `tfsdk:"tcp_control"`
+	// Vlan            *VlanModel            `tfsdk:"vlan"`
+	// VntagDstVifId   *VntagDstVifIdModel   `tfsdk:"vntag_dst_vif_id"`
+	// VntagSrcVifId   *VntagSrcVifIdModel   `tfsdk:"vntag_src_vif_id"`
+	// VntagVifListId  *VntagVifListIdModel  `tfsdk:"vntag_vif_list_id"`
+	// VxlanId         *VxlanIdModel         `tfsdk:"vxlan_id"`
 }
 
 type AppRuleApplicationModel struct {
@@ -377,6 +490,92 @@ type GreKeyGo struct {
 	Type     string `json:"type"`               // "greKey"
 	Value    string `json:"value"`              // min (4-byte hex)
 	ValueMax string `json:"valueMax,omitempty"` // max (4-byte hex), optional
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+// ===== Phase 2 Go Structs for FM wire format =====
+
+type GtpuTeidGo struct {
+	Type     string `json:"type"`               // "gtpuTeid"
+	Pos      int32  `json:"pos,omitempty"`      // nested level
+	Value    int32  `json:"value"`              // min TEID
+	ValueMax int32  `json:"valueMax,omitempty"` // max TEID
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type HostNameGo struct {
+	Type  string `json:"type"`  // "srcHostPrefix"
+	Value string `json:"value"` // host name prefix
+}
+
+type Ipv6FlowLabelGo struct {
+	Type     string `json:"type"`               // "ipv6FlowLabel"
+	Value    int32  `json:"value"`              // min label
+	ValueMax int32  `json:"valueMax,omitempty"` // max label
+}
+
+type Ipv6NextHeaderGo struct {
+	Type     string `json:"type"`               // "ipv6NextHeader"
+	Value    int32  `json:"value"`              // min header
+	ValueMax int32  `json:"valueMax,omitempty"` // max header
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type MplsLabelGo struct {
+	Type     string `json:"type"`               // "mplsLabel"
+	Pos      int32  `json:"pos"`               // label position (0-4)
+	Value    int32  `json:"value"`              // min label
+	ValueMax int32  `json:"valueMax,omitempty"` // max label
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type PortDestinationGo struct {
+	Type     string `json:"type"`               // "portDst"
+	Value    int32  `json:"value"`              // min port
+	ValueMax int32  `json:"valueMax,omitempty"` // max port
+}
+
+type PortSourceGo struct {
+	Type     string `json:"type"`               // "portSrc"
+	Value    int32  `json:"value"`              // min port
+	ValueMax int32  `json:"valueMax,omitempty"` // max port
+}
+
+type TcpControlGo struct {
+	Type  string `json:"type"`  // "tcpControl"
+	Value string `json:"value"` // flag string
+}
+
+type VlanGo struct {
+	Type     string `json:"type"`               // "vlan"
+	Pos      int32  `json:"pos,omitempty"`      // nested level
+	Value    int32  `json:"value"`              // min VLAN
+	ValueMax int32  `json:"valueMax,omitempty"` // max VLAN
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type VntagDstVifIdGo struct {
+	Type     string `json:"type"`               // "vntagDstVifId"
+	Value    int32  `json:"value"`              // min VIF
+	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+}
+
+type VntagSrcVifIdGo struct {
+	Type     string `json:"type"`               // "vntagSrcVifId"
+	Value    int32  `json:"value"`              // min VIF
+	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+}
+
+type VntagVifListIdGo struct {
+	Type     string `json:"type"`               // "vntagVifListId"
+	Value    int32  `json:"value"`              // min list ID
+	ValueMax int32  `json:"valueMax,omitempty"` // max list ID
+}
+
+type VxlanIdGo struct {
+	Type     string `json:"type"`               // "vxlanId"
+	Value    int32  `json:"value"`              // min VXLAN
+	ValueMax int32  `json:"valueMax,omitempty"` // max VXLAN
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
@@ -1486,6 +1685,205 @@ func (v asfPacketCountVsBufferCountValidator) ValidateInt32(
 	}
 }
 
+// ===== Phase 2 Map Condition Schemas =====
+
+// GTP-U TEID schema
+func gtpuTeidSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("gtpuTeid")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+			"teid_min":           schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+			"teid_max":           schema.Int32Attribute{Optional: true},
+			"teid_subset":        schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+		},
+	}
+}
+
+// Host Name schema
+func hostNameSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":            schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("srcHostPrefix")},
+			"src_host_prefix": schema.StringAttribute{Optional: true},
+		},
+	}
+}
+
+// IPv6 Flow Label schema
+func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ipv6FlowLabel")},
+			"label_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+			"label_max": schema.Int32Attribute{Optional: true},
+		},
+	}
+}
+
+// IPv6 Next Header schema
+func ipv6NextHeaderSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":          schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ipv6NextHeader")},
+			"header_min":    schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+			"header_max":    schema.Int32Attribute{Optional: true},
+			"header_subset": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+		},
+	}
+}
+
+type mplsLabelSubnetValidator struct{}
+
+func (v mplsLabelSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when value_max is set"
+}
+
+func (v mplsLabelSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v mplsLabelSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent MplsLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.ValueMax.IsNull() || parent.ValueMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid MPLS label subnet",
+			"subnet can only be configured when value_max is also configured.",
+		)
+	}
+}
+
+// MPLS Label schema
+func mplsLabelSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
+			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
+			"value_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"value_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
+		},
+	}
+}
+
+// Port Destination schema
+func portDestinationSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
+			"port_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+		},
+	}
+}
+
+// Port Source schema
+// func portSourceSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portSrc")},
+// 			"port_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+// 			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+// 		},
+// 	}
+// }
+
+// TCP Control Flags schema
+// func tcpControlSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":  schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("tcpControl")},
+// 			"flags": schema.StringAttribute{Optional: true, MarkdownDescription: "TCP flags: SYN, ACK, FIN, RST, PSH, URG (comma-separated)"},
+// 		},
+// 	}
+// }
+
+// // VLAN schema
+// func vlanSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vlan")},
+// 			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+// 			"vlan_min":           schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4095)}},
+// 			"vlan_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 4095)}},
+// 			"vlan_subset":        schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+// 		},
+// 	}
+// }
+
+// // VN-Tag Destination VIF ID schema
+// func vntagDstVifIdSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":    schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagDstVifId")},
+// 			"vif_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+// 			"vif_max": schema.Int32Attribute{Optional: true},
+// 		},
+// 	}
+// }
+
+// // VN-Tag Source VIF ID schema
+// func vntagSrcVifIdSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":    schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagSrcVifId")},
+// 			"vif_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+// 			"vif_max": schema.Int32Attribute{Optional: true},
+// 		},
+// 	}
+// }
+
+// // VN-Tag VIF List ID schema
+// func vntagVifListIdSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":        schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagVifListId")},
+// 			"list_id_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+// 			"list_id_max": schema.Int32Attribute{Optional: true},
+// 		},
+// 	}
+// }
+
+// // VXLAN ID schema
+// func vxlanIdSchema() schema.SingleNestedAttribute {
+// 	return schema.SingleNestedAttribute{
+// 		Optional: true,
+// 		Attributes: map[string]schema.Attribute{
+// 			"type":         schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vxlanId")},
+// 			"vxlan_min":    schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
+// 			"vxlan_max":    schema.Int32Attribute{Optional: true},
+// 			"vxlan_subset": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+// 		},
+// 	}
+// }
+
 // Comibine all the above rule schemas into a map rule schema.
 func RulesSchema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
@@ -1514,6 +1912,20 @@ func RulesSchema() schema.NestedAttributeObject {
 			"ipv4_ttl":            ip4TtlSchema(),
 			"ipv4_tos":            ip4TosSchema(),
 			"gre_key":             greKeySchema(),
+			// Phase 2 new conditions
+			"gtp_teid":          gtpuTeidSchema(),
+			"host_name":         hostNameSchema(),
+			"ipv6_flow_label":   ipv6FlowLabelSchema(),
+			"ipv6_next_header":  ipv6NextHeaderSchema(),
+			"mpls_label":        mplsLabelSchema(),
+			"port_destination":  portDestinationSchema(),
+			// "port_source":       portSourceSchema(),
+			// "tcp_control":       tcpControlSchema(),
+			// "vlan":              vlanSchema(),
+			// "vntag_dst_vif_id":  vntagDstVifIdSchema(),
+			// "vntag_src_vif_id":  vntagSrcVifIdSchema(),
+			// "vntag_vif_list_id": vntagVifListIdSchema(),
+			// "vxlan_id":          vxlanIdSchema(),
 		},
 	}
 }
@@ -1956,6 +2368,187 @@ func ModelGreKeyToGo(_ context.Context, m *GreKeyRuleModel) *GreKeyGo {
 	}
 }
 
+// ===== Phase 2 Model-to-Go Converter Functions =====
+
+func ModelGtpuTeidToGo(_ context.Context, m *GtpuTeidModel) *GtpuTeidGo {
+	min := m.TeidMin.ValueInt32()
+	var maxInt int32
+	if !m.TeidMax.IsNull() && !m.TeidMax.IsUnknown() {
+		maxInt = m.TeidMax.ValueInt32()
+	}
+	subset := m.TeidSubset.ValueString()
+	if subset == "" || subset == "all" {
+		subset = "none"
+	}
+	return &GtpuTeidGo{
+		Type:     m.Type.ValueString(),
+		Pos:      m.Pos.ValueInt32(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+	}
+}
+
+func ModelHostNameToGo(_ context.Context, m *HostNameModel) *HostNameGo {
+	return &HostNameGo{
+		Type:  m.Type.ValueString(),
+		Value: m.SrcHostPrefix.ValueString(),
+	}
+}
+
+func ModelIpv6FlowLabelToGo(_ context.Context, m *Ipv6FlowLabelModel) *Ipv6FlowLabelGo {
+	min := m.LabelMin.ValueInt32()
+	var maxInt int32
+	if !m.LabelMax.IsNull() && !m.LabelMax.IsUnknown() {
+		maxInt = m.LabelMax.ValueInt32()
+	}
+	return &Ipv6FlowLabelGo{
+		Type:     m.Type.ValueString(),
+		Value:    min,
+		ValueMax: maxInt,
+	}
+}
+
+func ModelIpv6NextHeaderToGo(_ context.Context, m *Ipv6NextHeaderModel) *Ipv6NextHeaderGo {
+	min := m.HeaderMin.ValueInt32()
+	var maxInt int32
+	if !m.HeaderMax.IsNull() && !m.HeaderMax.IsUnknown() {
+		maxInt = m.HeaderMax.ValueInt32()
+	}
+	subset := m.HeaderSubset.ValueString()
+	if subset == "" || subset == "all" {
+		subset = "none"
+	}
+	return &Ipv6NextHeaderGo{
+		Type:     m.Type.ValueString(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+	}
+}
+
+func ModelMplsLabelToGo(_ context.Context, m *MplsLabelModel) *MplsLabelGo {
+	label := &MplsLabelGo{
+		Type:  m.Type.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.ValueMin.ValueInt32(),
+	}
+	if !m.ValueMax.IsNull() && !m.ValueMax.IsUnknown() {
+		label.ValueMax = m.ValueMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
+	}
+	return label
+}
+
+func ModelPortDestinationToGo(_ context.Context, m *PortDestinationModel) *PortDestinationGo {
+	min := m.PortMin.ValueInt32()
+	var maxInt int32
+	if !m.PortMax.IsNull() && !m.PortMax.IsUnknown() {
+		maxInt = m.PortMax.ValueInt32()
+	}
+	return &PortDestinationGo{
+		Type:     m.Type.ValueString(),
+		Value:    min,
+		ValueMax: maxInt,
+	}
+}
+
+// func ModelPortSourceToGo(_ context.Context, m *PortSourceModel) *PortSourceGo {
+// 	min := m.PortMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.PortMax.IsNull() && !m.PortMax.IsUnknown() {
+// 		maxInt = m.PortMax.ValueInt32()
+// 	}
+// 	return &PortSourceGo{
+// 		Type:     m.Type.ValueString(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 	}
+// }
+
+// func ModelTcpControlToGo(_ context.Context, m *TcpControlModel) *TcpControlGo {
+// 	return &TcpControlGo{
+// 		Type:  m.Type.ValueString(),
+// 		Value: m.Flags.ValueString(),
+// 	}
+// }
+
+// func ModelVlanToGo(_ context.Context, m *VlanModel) *VlanGo {
+// 	min := m.VlanMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.VlanMax.IsNull() && !m.VlanMax.IsUnknown() {
+// 		maxInt = m.VlanMax.ValueInt32()
+// 	}
+// 	subset := m.VlanSubset.ValueString()
+// 	if subset == "" || subset == "all" {
+// 		subset = "none"
+// 	}
+// 	return &VlanGo{
+// 		Type:     m.Type.ValueString(),
+// 		Pos:      m.Pos.ValueInt32(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 		Subset:   subset,
+// 	}
+// }
+
+// func ModelVntagDstVifIdToGo(_ context.Context, m *VntagDstVifIdModel) *VntagDstVifIdGo {
+// 	min := m.VifMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+// 		maxInt = m.VifMax.ValueInt32()
+// 	}
+// 	return &VntagDstVifIdGo{
+// 		Type:     m.Type.ValueString(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 	}
+// }
+
+// func ModelVntagSrcVifIdToGo(_ context.Context, m *VntagSrcVifIdModel) *VntagSrcVifIdGo {
+// 	min := m.VifMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+// 		maxInt = m.VifMax.ValueInt32()
+// 	}
+// 	return &VntagSrcVifIdGo{
+// 		Type:     m.Type.ValueString(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 	}
+// }
+
+// func ModelVntagVifListIdToGo(_ context.Context, m *VntagVifListIdModel) *VntagVifListIdGo {
+// 	min := m.ListIdMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.ListIdMax.IsNull() && !m.ListIdMax.IsUnknown() {
+// 		maxInt = m.ListIdMax.ValueInt32()
+// 	}
+// 	return &VntagVifListIdGo{
+// 		Type:     m.Type.ValueString(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 	}
+// }
+
+// func ModelVxlanIdToGo(_ context.Context, m *VxlanIdModel) *VxlanIdGo {
+// 	min := m.VxlanMin.ValueInt32()
+// 	var maxInt int32
+// 	if !m.VxlanMax.IsNull() && !m.VxlanMax.IsUnknown() {
+// 		maxInt = m.VxlanMax.ValueInt32()
+// 	}
+// 	subset := m.VxlanSubset.ValueString()
+// 	if subset == "" || subset == "all" {
+// 		subset = "none"
+// 	}
+// 	return &VxlanIdGo{
+// 		Type:     m.Type.ValueString(),
+// 		Value:    min,
+// 		ValueMax: maxInt,
+// 		Subset:   subset,
+// 	}
+// }
+
 // ModelRulesToGoRules convert from TF Model rules to Go struct rules
 func ModelRulesToGoRules(ctx context.Context, rulesModel *RulesModel) RulesGo {
 	goRules := RulesGo{
@@ -2062,6 +2655,59 @@ func ModelRulesToGoRules(ctx context.Context, rulesModel *RulesModel) RulesGo {
 	if rulesModel.GreKey != nil {
 		goRules.Matches = append(goRules.Matches, ModelGreKeyToGo(ctx, rulesModel.GreKey))
 	}
+
+	// Phase 2 new conditions
+	if rulesModel.GtpuTeid != nil {
+		goRules.Matches = append(goRules.Matches, ModelGtpuTeidToGo(ctx, rulesModel.GtpuTeid))
+	}
+
+	if rulesModel.HostName != nil {
+		goRules.Matches = append(goRules.Matches, ModelHostNameToGo(ctx, rulesModel.HostName))
+	}
+
+	if rulesModel.Ipv6FlowLabel != nil {
+		goRules.Matches = append(goRules.Matches, ModelIpv6FlowLabelToGo(ctx, rulesModel.Ipv6FlowLabel))
+	}
+
+	if rulesModel.Ipv6NextHeader != nil {
+		goRules.Matches = append(goRules.Matches, ModelIpv6NextHeaderToGo(ctx, rulesModel.Ipv6NextHeader))
+	}
+
+	if rulesModel.MplsLabel != nil {
+		goRules.Matches = append(goRules.Matches, ModelMplsLabelToGo(ctx, rulesModel.MplsLabel))
+	}
+
+	if rulesModel.PortDestination != nil {
+		goRules.Matches = append(goRules.Matches, ModelPortDestinationToGo(ctx, rulesModel.PortDestination))
+	}
+
+	// if rulesModel.PortSource != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelPortSourceToGo(ctx, rulesModel.PortSource))
+	// }
+
+	// if rulesModel.TcpControl != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelTcpControlToGo(ctx, rulesModel.TcpControl))
+	// }
+
+	// if rulesModel.Vlan != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelVlanToGo(ctx, rulesModel.Vlan))
+	// }
+
+	// if rulesModel.VntagDstVifId != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelVntagDstVifIdToGo(ctx, rulesModel.VntagDstVifId))
+	// }
+
+	// if rulesModel.VntagSrcVifId != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelVntagSrcVifIdToGo(ctx, rulesModel.VntagSrcVifId))
+	// }
+
+	// if rulesModel.VntagVifListId != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelVntagVifListIdToGo(ctx, rulesModel.VntagVifListId))
+	// }
+
+	// if rulesModel.VxlanId != nil {
+	// 	goRules.Matches = append(goRules.Matches, ModelVxlanIdToGo(ctx, rulesModel.VxlanId))
+	// }
 
 	return goRules
 }
@@ -2542,6 +3188,33 @@ func copyGoRuleGrouptoModel(
 			modelRules.Ipv4Tos = GoIp4TosToModel(ruleElements)
 		case "greKey":
 			modelRules.GreKey = GoGreKeyToModel(ruleElements)
+		// Phase 2 new conditions
+		case "gtpuTeid":
+			modelRules.GtpuTeid = GoGtpuTeidToModel(ruleElements)
+		case "hostName", "srcHostPrefix":
+			modelRules.HostName = GoHostNameToModel(ruleElements)
+		case "ipv6FlowLabel":
+			modelRules.Ipv6FlowLabel = GoIpv6FlowLabelToModel(ruleElements)
+		case "ipv6NextHeader":
+			modelRules.Ipv6NextHeader = GoIpv6NextHeaderToModel(ruleElements)
+		case "mplsLabel":
+			modelRules.MplsLabel = GoMplsLabelToModel(ruleElements)
+		case "portDst":
+			modelRules.PortDestination = GoPortDestinationToModel(ruleElements)
+		// case "portSrc":
+		// 	modelRules.PortSource = GoPortSourceToModel(ruleElements)
+		// case "tcpControl":
+		// 	modelRules.TcpControl = GoTcpControlToModel(ruleElements)
+		// case "vlan":
+		// 	modelRules.Vlan = GoVlanToModel(ruleElements)
+		// case "vntagDstVifId":
+		// 	modelRules.VntagDstVifId = GoVntagDstVifIdToModel(ruleElements)
+		// case "vntagSrcVifId":
+		// 	modelRules.VntagSrcVifId = GoVntagSrcVifIdToModel(ruleElements)
+		// case "vntagVifListId":
+		// 	modelRules.VntagVifListId = GoVntagVifListIdToModel(ruleElements)
+		// case "vxlanId":
+		// 	modelRules.VxlanId = GoVxlanIdToModel(ruleElements)
 		}
 	}
 }
@@ -2920,6 +3593,205 @@ func GoGreKeyToModel(ruleElements map[string]any) *GreKeyRuleModel {
 
 	return m
 }
+
+// ===== Phase 2 Go-to-Model Converter Functions =====
+
+func GoGtpuTeidToModel(ruleElements map[string]any) *GtpuTeidModel {
+	m := &GtpuTeidModel{
+		Type: types.StringValue("gtpuTeid"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.TeidMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.TeidMax = types.Int32Value(int32(v.(float64)))
+	}
+	subset := "all"
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
+		subset = v.(string)
+	}
+	m.TeidSubset = types.StringValue(subset)
+	return m
+}
+
+func GoHostNameToModel(ruleElements map[string]any) *HostNameModel {
+	m := &HostNameModel{
+		Type: types.StringValue("srcHostPrefix"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.SrcHostPrefix = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoIpv6FlowLabelToModel(ruleElements map[string]any) *Ipv6FlowLabelModel {
+	m := &Ipv6FlowLabelModel{
+		Type: types.StringValue("ipv6FlowLabel"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.LabelMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.LabelMax = types.Int32Value(int32(v.(float64)))
+	}
+	return m
+}
+
+func GoIpv6NextHeaderToModel(ruleElements map[string]any) *Ipv6NextHeaderModel {
+	m := &Ipv6NextHeaderModel{
+		Type: types.StringValue("ipv6NextHeader"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.HeaderMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.HeaderMax = types.Int32Value(int32(v.(float64)))
+	}
+	subset := "all"
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
+		subset = v.(string)
+	}
+	m.HeaderSubset = types.StringValue(subset)
+	return m
+}
+
+func GoMplsLabelToModel(ruleElements map[string]any) *MplsLabelModel {
+	m := &MplsLabelModel{
+		Type:   types.StringValue("mplsLabel"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.ValueMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.ValueMax = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoPortDestinationToModel(ruleElements map[string]any) *PortDestinationModel {
+	m := &PortDestinationModel{
+		Type: types.StringValue("portDst"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.PortMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.PortMax = types.Int32Value(int32(v.(float64)))
+	}
+	return m
+}
+
+// func GoPortSourceToModel(ruleElements map[string]any) *PortSourceModel {
+// 	m := &PortSourceModel{
+// 		Type: types.StringValue("portSrc"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.PortMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.PortMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	return m
+// }
+
+// func GoTcpControlToModel(ruleElements map[string]any) *TcpControlModel {
+// 	m := &TcpControlModel{
+// 		Type: types.StringValue("tcpControl"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.Flags = types.StringValue(v.(string))
+// 	}
+// 	return m
+// }
+
+// func GoVlanToModel(ruleElements map[string]any) *VlanModel {
+// 	m := &VlanModel{
+// 		Type: types.StringValue("vlan"),
+// 	}
+// 	if v, ok := ruleElements["pos"]; ok {
+// 		m.Pos = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.VlanMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.VlanMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	subset := "all"
+// 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
+// 		subset = v.(string)
+// 	}
+// 	m.VlanSubset = types.StringValue(subset)
+// 	return m
+// }
+
+// func GoVntagDstVifIdToModel(ruleElements map[string]any) *VntagDstVifIdModel {
+// 	m := &VntagDstVifIdModel{
+// 		Type: types.StringValue("vntagDstVifId"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.VifMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.VifMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	return m
+// }
+
+// func GoVntagSrcVifIdToModel(ruleElements map[string]any) *VntagSrcVifIdModel {
+// 	m := &VntagSrcVifIdModel{
+// 		Type: types.StringValue("vntagSrcVifId"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.VifMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.VifMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	return m
+// }
+
+// func GoVntagVifListIdToModel(ruleElements map[string]any) *VntagVifListIdModel {
+// 	m := &VntagVifListIdModel{
+// 		Type: types.StringValue("vntagVifListId"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.ListIdMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.ListIdMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	return m
+// }
+
+// func GoVxlanIdToModel(ruleElements map[string]any) *VxlanIdModel {
+// 	m := &VxlanIdModel{
+// 		Type: types.StringValue("vxlanId"),
+// 	}
+// 	if v, ok := ruleElements["value"]; ok {
+// 		m.VxlanMin = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+// 		m.VxlanMax = types.Int32Value(int32(v.(float64)))
+// 	}
+// 	subset := "all"
+// 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
+// 		subset = v.(string)
+// 	}
+// 	m.VxlanSubset = types.StringValue(subset)
+// 	return m
+// }
 
 // ---------- Map FM update helpers (traffic / inclusion / exclusion) ----------
 // MapKind represents the FM entityType for maps in the MS update API.
