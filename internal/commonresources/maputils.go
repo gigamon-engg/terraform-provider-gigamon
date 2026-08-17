@@ -223,6 +223,8 @@ type PortDestinationModel struct {
 	Type    types.String `tfsdk:"type"`
 	PortMin types.Int32  `tfsdk:"port_min"`
 	PortMax types.Int32  `tfsdk:"port_max"`
+	Subnet   types.String `tfsdk:"subnet"`
+	Pos      types.Int32  `tfsdk:"pos"`
 }
 
 // Port Source (TCP/UDP)
@@ -533,6 +535,8 @@ type PortDestinationGo struct {
 	Type     string `json:"type"`               // "portDst"
 	Value    int32  `json:"value"`              // min port
 	ValueMax int32  `json:"valueMax,omitempty"` // max port
+	Pos      int32  `json:"pos"`               // label position (0-4)
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
 type PortSourceGo struct {
@@ -1786,6 +1790,42 @@ func mplsLabelSchema() schema.SingleNestedAttribute {
 	}
 }
 
+
+type portDestinationSubnetValidator struct{}
+
+func (v portDestinationSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when port_max is set"
+}
+
+func (v portDestinationSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portDestinationSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent PortDestinationModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMax.IsNull() || parent.PortMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port destination subnet",
+			"subnet can only be configured when port_max is also configured.",
+		)
+	}
+}
+
 // Port Destination schema
 func portDestinationSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
@@ -1794,6 +1834,8 @@ func portDestinationSchema() schema.SingleNestedAttribute {
 			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
 			"port_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 65535)}},
 			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},
 		},
 	}
 }
@@ -2441,16 +2483,18 @@ func ModelMplsLabelToGo(_ context.Context, m *MplsLabelModel) *MplsLabelGo {
 }
 
 func ModelPortDestinationToGo(_ context.Context, m *PortDestinationModel) *PortDestinationGo {
-	min := m.PortMin.ValueInt32()
-	var maxInt int32
+
+	label := &PortDestinationGo{
+		Type:  m.Type.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.PortMin.ValueInt32(),
+	}
 	if !m.PortMax.IsNull() && !m.PortMax.IsUnknown() {
-		maxInt = m.PortMax.ValueInt32()
+		label.ValueMax = m.PortMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
 	}
-	return &PortDestinationGo{
-		Type:     m.Type.ValueString(),
-		Value:    min,
-		ValueMax: maxInt,
-	}
+	return label
+
 }
 
 // func ModelPortSourceToGo(_ context.Context, m *PortSourceModel) *PortSourceGo {
@@ -3680,14 +3724,23 @@ func GoMplsLabelToModel(ruleElements map[string]any) *MplsLabelModel {
 }
 
 func GoPortDestinationToModel(ruleElements map[string]any) *PortDestinationModel {
+	
 	m := &PortDestinationModel{
-		Type: types.StringValue("portDst"),
+		Type:   types.StringValue("portDst"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(int32(v.(float64)))
 	}
 	if v, ok := ruleElements["value"]; ok {
 		m.PortMin = types.Int32Value(int32(v.(float64)))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
 		m.PortMax = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
 	}
 	return m
 }
