@@ -197,8 +197,10 @@ type HostNameModel struct {
 // IPv6 Flow Label
 type Ipv6FlowLabelModel struct {
 	Type     types.String `tfsdk:"type"`
-	LabelMin types.Int32  `tfsdk:"label_min"`
-	LabelMax types.Int32  `tfsdk:"label_max"`
+	Pos      types.Int32  `tfsdk:"pos"`        // 0..3, default 0
+	LabelMin types.Int32  `tfsdk:"label_min"` // 20-bit flow label, represented as a 3-byte hex value
+	LabelMax types.Int32  `tfsdk:"label_max"` // optional range max
+	Subnet   types.String `tfsdk:"subnet"`    // "none", "even", or "odd"
 }
 
 // IPv6 Next Header
@@ -499,7 +501,7 @@ type GreKeyGo struct {
 
 type GtpuTeidGo struct {
 	Type     string `json:"type"`               // "gtpuTeid"
-	Pos      int32  `json:"pos,omitempty"`      // nested level
+	Pos      int32  `json:"pos"`               // nested level
 	Value    int32  `json:"value"`              // min TEID
 	ValueMax int32  `json:"valueMax,omitempty"` // max TEID
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
@@ -511,9 +513,11 @@ type HostNameGo struct {
 }
 
 type Ipv6FlowLabelGo struct {
-	Type     string `json:"type"`               // "ipv6FlowLabel"
+	Type     string `json:"type"`               // "ip6Flow"
+	Pos      int32  `json:"pos"`               // label position (0-3)
 	Value    int32  `json:"value"`              // min label
 	ValueMax int32  `json:"valueMax,omitempty"` // max label
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
 type Ipv6NextHeaderGo struct {
@@ -1716,14 +1720,123 @@ func hostNameSchema() schema.SingleNestedAttribute {
 	}
 }
 
+type ipv6FlowLabelRangeValidator struct{}
+
+func (v ipv6FlowLabelRangeValidator) Description(ctx context.Context) string {
+	return "label_max must be greater than label_min when both are set"
+}
+
+func (v ipv6FlowLabelRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6FlowLabelRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent Ipv6FlowLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.LabelMin.IsNull() || parent.LabelMin.IsUnknown() {
+		return
+	}
+
+	min := parent.LabelMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 flow-label range",
+			fmt.Sprintf("label_max (%d) must be greater than label_min (%d)", max, min),
+		)
+	}
+}
+
+type ipv6FlowLabelSubnetValidator struct{}
+
+func (v ipv6FlowLabelSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when label_max is set"
+}
+
+func (v ipv6FlowLabelSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6FlowLabelSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent Ipv6FlowLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.LabelMax.IsNull() || parent.LabelMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 flow-label subnet",
+			"subnet can only be configured when label_max is also configured.",
+		)
+	}
+}
+
 // IPv6 Flow Label schema
 func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ipv6FlowLabel")},
-			"label_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"label_max": schema.Int32Attribute{Optional: true},
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6Flow")},
+			"pos": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+			"label_min": schema.Int32Attribute{
+				MarkdownDescription: "Lower bound (inclusive) of the IPv6 20-bit flow label, represented as a 3-byte hexadecimal value (0x000000-0x0FFFFF).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 1048575),
+				},
+			},
+			"label_max": schema.Int32Attribute{
+				MarkdownDescription: "Upper bound (inclusive) of the IPv6 20-bit flow label, represented as a 3-byte hexadecimal value (0x000000-0x0FFFFF).",
+				Optional:            true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 1048575),
+					ipv6FlowLabelRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				MarkdownDescription: "Restrict matches within [label_min, label_max] to none, even, or odd. Values other than none require label_max.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					ipv6FlowLabelSubnetValidator{},
+				},
+			},
 		},
 	}
 }
@@ -2439,16 +2552,16 @@ func ModelHostNameToGo(_ context.Context, m *HostNameModel) *HostNameGo {
 }
 
 func ModelIpv6FlowLabelToGo(_ context.Context, m *Ipv6FlowLabelModel) *Ipv6FlowLabelGo {
-	min := m.LabelMin.ValueInt32()
-	var maxInt int32
+	label := &Ipv6FlowLabelGo{
+		Type:  "ip6Flow",
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.LabelMin.ValueInt32(),
+	}
 	if !m.LabelMax.IsNull() && !m.LabelMax.IsUnknown() {
-		maxInt = m.LabelMax.ValueInt32()
+		label.ValueMax = m.LabelMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
 	}
-	return &Ipv6FlowLabelGo{
-		Type:     m.Type.ValueString(),
-		Value:    min,
-		ValueMax: maxInt,
-	}
+	return label
 }
 
 func ModelIpv6NextHeaderToGo(_ context.Context, m *Ipv6NextHeaderModel) *Ipv6NextHeaderGo {
@@ -3237,7 +3350,7 @@ func copyGoRuleGrouptoModel(
 			modelRules.GtpuTeid = GoGtpuTeidToModel(ruleElements)
 		case "hostName", "srcHostPrefix":
 			modelRules.HostName = GoHostNameToModel(ruleElements)
-		case "ipv6FlowLabel":
+		case "ip6Flow", "ipv6FlowLabel":
 			modelRules.Ipv6FlowLabel = GoIpv6FlowLabelToModel(ruleElements)
 		case "ipv6NextHeader":
 			modelRules.Ipv6NextHeader = GoIpv6NextHeaderToModel(ruleElements)
@@ -3264,15 +3377,25 @@ func copyGoRuleGrouptoModel(
 }
 
 // anyToInt32 is used only when reading FM JSON that was unmarshalled into
-// interface{} / map[string]any. encoding/json represents all numbers in this
-// case as float64, so we normalize them here. On unexpected types we panic
-// so that FM/schema bugs are caught early.
+// interface{} / map[string]any. encoding/json represents all numbers as float64
+// when unmarshalling into interface{}, but some FM API responses may encode
+// numeric fields as strings; both are handled here.
 func anyToInt32(v any, field string) int32 {
 	switch x := v.(type) {
 	case float64:
 		return int32(x)
 	case int32:
 		return x
+	case int:
+		return int32(x)
+	case int64:
+		return int32(x)
+	case string:
+		n, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return 0
+		}
+		return int32(n)
 	default:
 		panic(fmt.Sprintf("unexpected type for %s: %T (%v)", field, v, v))
 	}
@@ -3645,13 +3768,13 @@ func GoGtpuTeidToModel(ruleElements map[string]any) *GtpuTeidModel {
 		Type: types.StringValue("gtpuTeid"),
 	}
 	if v, ok := ruleElements["pos"]; ok {
-		m.Pos = types.Int32Value(int32(v.(float64)))
+		m.Pos = types.Int32Value(anyToInt32(v, "gtpuTeid.pos"))
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.TeidMin = types.Int32Value(int32(v.(float64)))
+		m.TeidMin = types.Int32Value(anyToInt32(v, "gtpuTeid.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.TeidMax = types.Int32Value(int32(v.(float64)))
+		m.TeidMax = types.Int32Value(anyToInt32(v, "gtpuTeid.valueMax"))
 	}
 	subset := "all"
 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
@@ -3673,13 +3796,21 @@ func GoHostNameToModel(ruleElements map[string]any) *HostNameModel {
 
 func GoIpv6FlowLabelToModel(ruleElements map[string]any) *Ipv6FlowLabelModel {
 	m := &Ipv6FlowLabelModel{
-		Type: types.StringValue("ipv6FlowLabel"),
+		Type:   types.StringValue("ip6Flow"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.pos"))
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.LabelMin = types.Int32Value(int32(v.(float64)))
+		m.LabelMin = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.LabelMax = types.Int32Value(int32(v.(float64)))
+		m.LabelMax = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
 	}
 	return m
 }
@@ -3689,10 +3820,10 @@ func GoIpv6NextHeaderToModel(ruleElements map[string]any) *Ipv6NextHeaderModel {
 		Type: types.StringValue("ipv6NextHeader"),
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.HeaderMin = types.Int32Value(int32(v.(float64)))
+		m.HeaderMin = types.Int32Value(anyToInt32(v, "ipv6NextHeader.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.HeaderMax = types.Int32Value(int32(v.(float64)))
+		m.HeaderMax = types.Int32Value(anyToInt32(v, "ipv6NextHeader.valueMax"))
 	}
 	subset := "all"
 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
@@ -3709,13 +3840,13 @@ func GoMplsLabelToModel(ruleElements map[string]any) *MplsLabelModel {
 		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["pos"]; ok {
-		m.Pos = types.Int32Value(int32(v.(float64)))
+		m.Pos = types.Int32Value(anyToInt32(v, "mplsLabel.pos"))
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.ValueMin = types.Int32Value(int32(v.(float64)))
+		m.ValueMin = types.Int32Value(anyToInt32(v, "mplsLabel.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.ValueMax = types.Int32Value(int32(v.(float64)))
+		m.ValueMax = types.Int32Value(anyToInt32(v, "mplsLabel.valueMax"))
 	}
 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
 		m.Subnet = types.StringValue(v.(string))
@@ -3731,13 +3862,13 @@ func GoPortDestinationToModel(ruleElements map[string]any) *PortDestinationModel
 		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["pos"]; ok {
-		m.Pos = types.Int32Value(int32(v.(float64)))
+		m.Pos = types.Int32Value(anyToInt32(v, "portDst.pos"))
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.PortMin = types.Int32Value(int32(v.(float64)))
+		m.PortMin = types.Int32Value(anyToInt32(v, "portDst.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.PortMax = types.Int32Value(int32(v.(float64)))
+		m.PortMax = types.Int32Value(anyToInt32(v, "portDst.valueMax"))
 	}
 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
 		m.Subnet = types.StringValue(v.(string))
