@@ -181,11 +181,11 @@ type GreKeyRuleModel struct {
 
 // GTP-U TEID (Tunnel Endpoint ID)
 type GtpuTeidModel struct {
-	Type       types.String `tfsdk:"type"`
-	Pos        types.Int32  `tfsdk:"nested_level_count"`
-	TeidMin    types.Int32  `tfsdk:"teid_min"`
-	TeidMax    types.Int32  `tfsdk:"teid_max"`
-	TeidSubset types.String `tfsdk:"teid_subset"`
+	Type    types.String `tfsdk:"type"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
+	TeidMin types.String `tfsdk:"teid_min"`
+	TeidMax types.String `tfsdk:"teid_max"`
+	Subnet  types.String `tfsdk:"subnet"`
 }
 
 // Host Name
@@ -501,10 +501,10 @@ type GreKeyGo struct {
 // ===== Phase 2 Go Structs for FM wire format =====
 
 type GtpuTeidGo struct {
-	Type     string `json:"type"`               // "gtpuTeid"
+	Type     string `json:"type"`               // "gtputeId"
 	Pos      int32  `json:"pos"`               // nested level
-	Value    int32  `json:"value"`              // min TEID
-	ValueMax int32  `json:"valueMax,omitempty"` // max TEID
+	Value    string `json:"value"`              // min TEID (4-byte hex)
+	ValueMax string `json:"valueMax,omitempty"` // max TEID (4-byte hex)
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
@@ -1697,16 +1697,123 @@ func (v asfPacketCountVsBufferCountValidator) ValidateInt32(
 
 // ===== Phase 2 Map Condition Schemas =====
 
+type gtpuTeidRangeValidator struct{}
+
+func (v gtpuTeidRangeValidator) Description(ctx context.Context) string {
+	return "teid_max must be greater than teid_min when both are set"
+}
+
+func (v gtpuTeidRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v gtpuTeidRangeValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent GtpuTeidModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.TeidMin.IsNull() || parent.TeidMin.IsUnknown() {
+		return
+	}
+
+	minVal, err := strconv.ParseUint(parent.TeidMin.ValueString(), 16, 32)
+	if err != nil {
+		return
+	}
+	maxVal, err := strconv.ParseUint(req.ConfigValue.ValueString(), 16, 32)
+	if err != nil {
+		return
+	}
+	if maxVal <= minVal {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid GTP-U TEID range",
+			fmt.Sprintf("teid_max (%s) must be greater than teid_min (%s)", req.ConfigValue.ValueString(), parent.TeidMin.ValueString()),
+		)
+	}
+}
+
+type gtpuTeidSubnetValidator struct{}
+
+func (v gtpuTeidSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when teid_max is set"
+}
+
+func (v gtpuTeidSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v gtpuTeidSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent GtpuTeidModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.TeidMax.IsNull() || parent.TeidMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid GTP-U TEID subnet",
+			"subnet can only be configured when teid_max is also configured.",
+		)
+	}
+}
+
 // GTP-U TEID schema
 func gtpuTeidSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("gtpuTeid")},
-			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"teid_min":           schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"teid_max":           schema.Int32Attribute{Optional: true},
-			"teid_subset":        schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("gtputeId")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"teid_min": schema.StringAttribute{
+				Required: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hex4ByteRegex,
+						"must be a 4-byte hexadecimal value (exactly 8 hex characters, e.g. 00000001)",
+					),
+				},
+			},
+			"teid_max": schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hex4ByteRegex,
+						"must be a 4-byte hexadecimal value (exactly 8 hex characters, e.g. 000000FF)",
+					),
+					gtpuTeidRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					gtpuTeidSubnetValidator{},
+				},
+			},
 		},
 	}
 }
@@ -2631,22 +2738,26 @@ func ModelGreKeyToGo(_ context.Context, m *GreKeyRuleModel) *GreKeyGo {
 // ===== Phase 2 Model-to-Go Converter Functions =====
 
 func ModelGtpuTeidToGo(_ context.Context, m *GtpuTeidModel) *GtpuTeidGo {
-	min := m.TeidMin.ValueInt32()
-	var maxInt int32
-	if !m.TeidMax.IsNull() && !m.TeidMax.IsUnknown() {
-		maxInt = m.TeidMax.ValueInt32()
-	}
-	subset := m.TeidSubset.ValueString()
+	subset := m.Subnet.ValueString()
 	if subset == "" || subset == "all" {
 		subset = "none"
 	}
-	return &GtpuTeidGo{
-		Type:     m.Type.ValueString(),
-		Pos:      m.Pos.ValueInt32(),
-		Value:    min,
-		ValueMax: maxInt,
-		Subset:   subset,
+	
+	// Parse hex strings to int32, then format as decimal for API
+	minVal, _ := strconv.ParseInt(m.TeidMin.ValueString(), 16, 32)
+	minStr := strconv.FormatInt(minVal, 10)
+	
+	g := &GtpuTeidGo{
+		Type:   m.Type.ValueString(),
+		Pos:    m.Pos.ValueInt32(),
+		Value:  minStr,
+		Subset: subset,
 	}
+	if !m.TeidMax.IsNull() && !m.TeidMax.IsUnknown() {
+		maxVal, _ := strconv.ParseInt(m.TeidMax.ValueString(), 16, 32)
+		g.ValueMax = strconv.FormatInt(maxVal, 10)
+	}
+	return g
 }
 
 func ModelHostNameToGo(_ context.Context, m *HostNameModel) *HostNameGo {
@@ -3452,7 +3563,7 @@ func copyGoRuleGrouptoModel(
 		case "greKey":
 			modelRules.GreKey = GoGreKeyToModel(ruleElements)
 		// Phase 2 new conditions
-		case "gtpuTeid":
+		case "gtputeId", "gtpuTeid":
 			modelRules.GtpuTeid = GoGtpuTeidToModel(ruleElements)
 		case "hostName", "srcHostPrefix":
 			modelRules.HostName = GoHostNameToModel(ruleElements)
@@ -3871,22 +3982,25 @@ func GoGreKeyToModel(ruleElements map[string]any) *GreKeyRuleModel {
 
 func GoGtpuTeidToModel(ruleElements map[string]any) *GtpuTeidModel {
 	m := &GtpuTeidModel{
-		Type: types.StringValue("gtpuTeid"),
+		Type:   types.StringValue("gtputeId"),
+		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["pos"]; ok {
 		m.Pos = types.Int32Value(anyToInt32(v, "gtpuTeid.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.TeidMin = types.Int32Value(anyToInt32(v, "gtpuTeid.value"))
+		m.TeidMin = types.StringValue(fmt.Sprintf("%08X", anyToInt32(v, "gtpuTeid.value")))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.TeidMax = types.Int32Value(anyToInt32(v, "gtpuTeid.valueMax"))
+		m.TeidMax = types.StringValue(fmt.Sprintf("%08X", anyToInt32(v, "gtpuTeid.valueMax")))
 	}
-	subset := "all"
-	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
-		subset = v.(string)
+	if v, ok := ruleElements["subset"]; ok {
+		if s, ok2 := v.(string); ok2 && s != "" && s != "all" {
+			m.Subnet = types.StringValue(s)
+		}
 	}
-	m.TeidSubset = types.StringValue(subset)
 	return m
 }
 
