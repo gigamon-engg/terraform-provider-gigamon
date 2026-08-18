@@ -205,10 +205,11 @@ type Ipv6FlowLabelModel struct {
 
 // IPv6 Next Header
 type Ipv6NextHeaderModel struct {
-	Type         types.String `tfsdk:"type"`
-	HeaderMin    types.Int32  `tfsdk:"header_min"`
-	HeaderMax    types.Int32  `tfsdk:"header_max"`
-	HeaderSubset types.String `tfsdk:"header_subset"`
+	Type      types.String `tfsdk:"type"`
+	Pos       types.Int32  `tfsdk:"pos"`
+	HeaderMin types.Int32  `tfsdk:"header_min"`
+	HeaderMax types.Int32  `tfsdk:"header_max"`
+	Subnet    types.String `tfsdk:"subnet"`
 }
 
 // MPLS Label
@@ -522,6 +523,7 @@ type Ipv6FlowLabelGo struct {
 
 type Ipv6NextHeaderGo struct {
 	Type     string `json:"type"`               // "ipv6NextHeader"
+	Pos      int32  `json:"pos"`               // header position (0-3)
 	Value    int32  `json:"value"`              // min header
 	ValueMax int32  `json:"valueMax,omitempty"` // max header
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
@@ -1841,15 +1843,118 @@ func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
 	}
 }
 
+type ipv6NextHeaderRangeValidator struct{}
+
+func (v ipv6NextHeaderRangeValidator) Description(ctx context.Context) string {
+	return "header_max must be greater than header_min when both are set"
+}
+
+func (v ipv6NextHeaderRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6NextHeaderRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent Ipv6NextHeaderModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.HeaderMin.IsNull() || parent.HeaderMin.IsUnknown() {
+		return
+	}
+
+	min := parent.HeaderMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 next-header range",
+			fmt.Sprintf("header_max (%d) must be greater than header_min (%d)", max, min),
+		)
+	}
+}
+
+type ipv6NextHeaderSubnetValidator struct{}
+
+func (v ipv6NextHeaderSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when header_max is set"
+}
+
+func (v ipv6NextHeaderSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6NextHeaderSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent Ipv6NextHeaderModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.HeaderMax.IsNull() || parent.HeaderMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 next-header subset",
+			"subnet can only be configured when header_max is also configured.",
+		)
+	}
+}
+
 // IPv6 Next Header schema
 func ipv6NextHeaderSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":          schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ipv6NextHeader")},
-			"header_min":    schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"header_max":    schema.Int32Attribute{Optional: true},
-			"header_subset": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6NextHeader")},
+			"pos": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+			"header_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 255),
+				},
+			},
+			"header_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 255),
+					ipv6NextHeaderRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					ipv6NextHeaderSubnetValidator{},
+				},
+			},
 		},
 	}
 }
@@ -2570,12 +2675,13 @@ func ModelIpv6NextHeaderToGo(_ context.Context, m *Ipv6NextHeaderModel) *Ipv6Nex
 	if !m.HeaderMax.IsNull() && !m.HeaderMax.IsUnknown() {
 		maxInt = m.HeaderMax.ValueInt32()
 	}
-	subset := m.HeaderSubset.ValueString()
+	subset := m.Subnet.ValueString()
 	if subset == "" || subset == "all" {
 		subset = "none"
 	}
 	return &Ipv6NextHeaderGo{
 		Type:     m.Type.ValueString(),
+		Pos:      m.Pos.ValueInt32(),
 		Value:    min,
 		ValueMax: maxInt,
 		Subset:   subset,
@@ -3352,7 +3458,7 @@ func copyGoRuleGrouptoModel(
 			modelRules.HostName = GoHostNameToModel(ruleElements)
 		case "ip6Flow", "ipv6FlowLabel":
 			modelRules.Ipv6FlowLabel = GoIpv6FlowLabelToModel(ruleElements)
-		case "ipv6NextHeader":
+		case "ip6NextHeader", "ipv6NextHeader":
 			modelRules.Ipv6NextHeader = GoIpv6NextHeaderToModel(ruleElements)
 		case "mplsLabel":
 			modelRules.MplsLabel = GoMplsLabelToModel(ruleElements)
@@ -3817,7 +3923,11 @@ func GoIpv6FlowLabelToModel(ruleElements map[string]any) *Ipv6FlowLabelModel {
 
 func GoIpv6NextHeaderToModel(ruleElements map[string]any) *Ipv6NextHeaderModel {
 	m := &Ipv6NextHeaderModel{
-		Type: types.StringValue("ipv6NextHeader"),
+		Type: types.StringValue("ip6NextHeader"),
+		Pos:  types.Int32Value(0),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "ipv6NextHeader.pos"))
 	}
 	if v, ok := ruleElements["value"]; ok {
 		m.HeaderMin = types.Int32Value(anyToInt32(v, "ipv6NextHeader.value"))
@@ -3825,11 +3935,11 @@ func GoIpv6NextHeaderToModel(ruleElements map[string]any) *Ipv6NextHeaderModel {
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
 		m.HeaderMax = types.Int32Value(anyToInt32(v, "ipv6NextHeader.valueMax"))
 	}
-	subset := "all"
-	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
+	subset := "none"
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "all" {
 		subset = v.(string)
 	}
-	m.HeaderSubset = types.StringValue(subset)
+	m.Subnet = types.StringValue(subset)
 	return m
 }
 
