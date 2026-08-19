@@ -617,8 +617,8 @@ func (r *AppGVHTTP2) Delete(ctx context.Context, req resource.DeleteRequest, res
 			EntityType: "application",
 			Operation:  "delete",
 			Application: map[string]interface{}{
-				"id":       rawID,
-				"app_type": gvhttp2AppName,
+				"id":   rawID,
+				"name": gvhttp2AppName,
 			},
 		}},
 	}
