@@ -37,7 +37,7 @@ Each `gigamon_app_gvhttp2` belongs to one monitoring session.
 
 ### Important behavior and constraints
 
-- `mode` is immutable after create. Changing it requires replacing the resource.
+- Changing `mode` after create forces resource replacement (delete + recreate).
 - `tx_tunnel` must contain exactly one element.
 - `tx_tunnel.tx_type` must match `mode`:
   - `casa`, `nokia`, `oracle` require `tx_type = "vxlan"`
@@ -140,7 +140,7 @@ resource "gigamon_app_gvhttp2" "nokia_hep3_stream" {
   - `nokiaHEP3Stream`
   - `nokiaHEP3Transaction`
 
-  This value is immutable after create.
+  Changing this value forces resource replacement.
 
 - **`tx_tunnel`** (List of Objects)
   Exactly one TX tunnel must be provided.
@@ -186,7 +186,7 @@ resource "gigamon_app_gvhttp2" "nokia_hep3_stream" {
 
 - **`log_level`** (List of String)
   Log verbosity flags.
-  Allowed values: `all`, `info`, `detail`, `fullparse`.
+  Allowed values:  `info`, `detail`, `fullparse`.
   Default: `["info"]`.
 
 ### `tx_tunnel` Block

@@ -129,33 +129,6 @@ var modesVxlan = map[string]bool{"casa": true, "nokia": true, "oracle": true}
 // modesHep3 are the modes that require tx_tunnel.tx_type = tcp and disallow pcap_enable.
 var modesHep3 = map[string]bool{"nokiaHEP3Stream": true, "nokiaHEP3Transaction": true}
 
-// gvhttp2ModeImmutablePlanModifier prevents changing mode after creation.
-type gvhttp2ModeImmutablePlanModifier struct{}
-
-func (m gvhttp2ModeImmutablePlanModifier) Description(ctx context.Context) string {
-	return "mode cannot be changed once the app is configured"
-}
-
-func (m gvhttp2ModeImmutablePlanModifier) MarkdownDescription(ctx context.Context) string {
-	return "mode cannot be changed once the app is configured"
-}
-
-func (m gvhttp2ModeImmutablePlanModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	if req.StateValue.IsNull() {
-		return
-	}
-
-	if req.PlanValue.Equal(req.StateValue) {
-		return
-	}
-
-	resp.Diagnostics.AddAttributeError(
-		req.Path,
-		"Mode Cannot Be Changed",
-		fmt.Sprintf("mode cannot be changed once the app is configured. Previous value: %s, new value: %s", req.StateValue.ValueString(), req.PlanValue.ValueString()),
-	)
-}
-
 func (r *AppGVHTTP2) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_gvhttp2"
 }
@@ -247,7 +220,7 @@ func (r *AppGVHTTP2) Schema(ctx context.Context, req resource.SchemaRequest, res
 					stringvalidator.OneOf("casa", "nokia", "oracle", "nokiaHEP3Stream", "nokiaHEP3Transaction"),
 				},
 				PlanModifiers: []planmodifier.String{
-					gvhttp2ModeImmutablePlanModifier{},
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"tx_tunnel": schema.ListNestedAttribute{
