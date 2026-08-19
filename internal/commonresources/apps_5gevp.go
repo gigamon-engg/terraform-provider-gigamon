@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 
 	"terraform-provider-gigamon/internal/commonutils"
@@ -28,6 +29,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -54,6 +56,7 @@ const (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &Evp5g{}
 
+var _ resource.ResourceWithModifyPlan = &Evp5g{}
 // Evp5g app resource, which manages the EVP5G (Ericsson vTAP / 5G Cloud)
 // application instances deployed on a Monitoring Session.
 func NewEvp5g() resource.Resource {
@@ -430,6 +433,80 @@ func (e *Evp5g) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 			},
 		},
 	}
+}
+
+func (e *Evp5g) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroying
+	}
+	var data Evp5gModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validateEvp5gIPs(ctx, &data, resp)
+}
+
+func validateEvp5gIPs(ctx context.Context, data *Evp5gModel, resp *resource.ModifyPlanResponse) {
+	if data.RxTunnel != nil {
+		if ip := data.RxTunnel.ListenIPAddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				// path reference is approximate for block attributes
+				evp5gPath("rx_tunnel", "listen_ip_address"),
+				"Invalid listen_ip_address",
+				fmt.Sprintf("rx_tunnel.listen_ip_address %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+	}
+
+	if data.TxTunnel != nil {
+		if ip := data.TxTunnel.TxRemoteIPAddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("tx_tunnel", "tx_remote_ip_address"),
+				"Invalid tx_remote_ip_address",
+				fmt.Sprintf("tx_tunnel.tx_remote_ip_address %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+
+		if !data.TxTunnel.TxSrcIPAddress.IsNull() && !data.TxTunnel.TxSrcIPAddress.IsUnknown() {
+			var srcIPs []string
+			_ = data.TxTunnel.TxSrcIPAddress.ElementsAs(ctx, &srcIPs, false)
+			for i, ip := range srcIPs {
+				if ip != "" && net.ParseIP(ip) == nil {
+					resp.Diagnostics.AddAttributeError(
+						evp5gPath("tx_tunnel", "tx_src_ip_address"),
+						"Invalid tx_src_ip_address",
+						fmt.Sprintf("tx_tunnel.tx_src_ip_address[%d] %q must be a valid IPv4 or IPv6 address", i, ip),
+					)
+				}
+			}
+		}
+	}
+
+	if data.TimeServerConfig != nil {
+		if ip := data.TimeServerConfig.PrimaryServer.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("time_server_config", "primary_server"),
+				"Invalid primary_server",
+				fmt.Sprintf("time_server_config.primary_server %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+		if ip := data.TimeServerConfig.SecondaryServer.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("time_server_config", "secondary_server"),
+				"Invalid secondary_server",
+				fmt.Sprintf("time_server_config.secondary_server %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+	}
+}
+
+// evp5gPath builds a simple attribute path for a nested block field.
+// The framework path API requires matching the schema structure; for blocks
+// we use AtName on both the block and the attribute within it.
+func evp5gPath(block, attr string) path.Path {
+	return path.Root(block).AtName(attr)
 }
 
 // Initial Configure call, to initialize the Provider
