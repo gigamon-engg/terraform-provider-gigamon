@@ -298,10 +298,11 @@ func (e *Evp5g) Schema(ctx context.Context, req resource.SchemaRequest, resp *re
 					},
 					"tx_src_ip_address": schema.ListAttribute{
 						ElementType:         types.StringType,
-						MarkdownDescription: "List of IPv4 or IPv6 source addresses for the TX tunnel.",
+						MarkdownDescription: "List of IPv4 or IPv6 source addresses for the TX tunnel. Maximum 8 entries.",
 						Required:            true,
 						Validators: []validator.List{
 							listvalidator.SizeAtLeast(1),
+							listvalidator.SizeAtMost(8),
 						},
 					},
 				},
