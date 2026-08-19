@@ -262,12 +262,12 @@ func (r *AppGVHTTP2) Schema(ctx context.Context, req resource.SchemaRequest, res
 							},
 						},
 						"tx_thread": schema.Int64Attribute{
-							MarkdownDescription: "Number of TX threads (1-16). Default: 4. Only applicable when mode is casa/nokia/oracle and tx_type = vxlan.",
+							MarkdownDescription: "Number of TX threads. Default: 4. Allowed range depends on mode: casa=4 only; nokia/oracle=1-16; nokiaHEP3Stream/nokiaHEP3Transaction=1-200.",
 							Optional:            true,
 							Computed:            true,
 							Default:             int64default.StaticInt64(4),
 							Validators: []validator.Int64{
-								int64validator.Between(1, 16),
+								int64validator.Between(1, 200),
 							},
 						},
 						"tx_vni_id": schema.Int64Attribute{
@@ -385,7 +385,7 @@ func validateGVHTTP2Config(ctx context.Context, data AppGVHTTP2Model, diags *dia
 	}
 
 	// --- pcap_enable / mode coupling ---
-	if !data.PcapEnable.IsNull() && !data.PcapEnable.IsUnknown() && modesHep3[mode] {
+	if !data.PcapEnable.IsNull() && !data.PcapEnable.IsUnknown() && data.PcapEnable.ValueBool() && modesHep3[mode] {
 		diags.AddAttributeError(path.Root("pcap_enable"),
 			"Invalid pcap_enable",
 			fmt.Sprintf("pcap_enable is not supported when mode is %q", mode))
@@ -428,16 +428,30 @@ func validateGVHTTP2Config(ctx context.Context, data AppGVHTTP2Model, diags *dia
 					"Invalid tx_tunnel.tx_type",
 					fmt.Sprintf("tx_tunnel[%d].tx_type must be tcp when mode is %q", idx, mode))
 			}
-			// tx_thread / tx_vni_id are not applicable in HEP3 modes.
-			if !tun.TxThread.IsNull() && !tun.TxThread.IsUnknown() {
-				diags.AddAttributeError(p.AtName("tx_thread"),
-					"Invalid tx_tunnel.tx_thread",
-					fmt.Sprintf("tx_tunnel[%d].tx_thread is not configurable when mode is %q", idx, mode))
-			}
+			// tx_vni_id is not applicable in HEP3 modes.
 			if !tun.TxVniId.IsNull() && !tun.TxVniId.IsUnknown() && tun.TxVniId.ValueInt64() != 0 {
 				diags.AddAttributeError(p.AtName("tx_vni_id"),
 					"Invalid tx_tunnel.tx_vni_id",
 					fmt.Sprintf("tx_tunnel[%d].tx_vni_id is not configurable when mode is %q", idx, mode))
+			}
+		}
+
+		// Mode-specific tx_thread constraints.
+		if !tun.TxThread.IsNull() && !tun.TxThread.IsUnknown() {
+			txThread := tun.TxThread.ValueInt64()
+			switch mode {
+			case "casa":
+				if txThread != 4 {
+					diags.AddAttributeError(p.AtName("tx_thread"),
+						"Invalid tx_tunnel.tx_thread",
+						fmt.Sprintf("tx_tunnel[%d].tx_thread must be 4 when mode is %q", idx, mode))
+				}
+			case "nokia", "oracle":
+				if txThread < 1 || txThread > 16 {
+					diags.AddAttributeError(p.AtName("tx_thread"),
+						"Invalid tx_tunnel.tx_thread",
+						fmt.Sprintf("tx_tunnel[%d].tx_thread must be between 1 and 16 when mode is %q", idx, mode))
+				}
 			}
 		}
 
@@ -667,9 +681,9 @@ func buildFMGVHTTP2Payload(ctx context.Context, model AppGVHTTP2Model) (map[stri
 				"txDstIpaddress": t.TxDstIpaddress.ValueString(),
 				"txDstPort":      t.TxDstPort.ValueInt64(),
 				"txType":         t.TxType.ValueString(),
+				"txThread":       t.TxThread.ValueInt64(),
 			}
 			if t.TxType.ValueString() == "vxlan" {
-				entry["txThread"] = t.TxThread.ValueInt64()
 				entry["txVniId"] = t.TxVniId.ValueInt64()
 			}
 			txList = append(txList, entry)
