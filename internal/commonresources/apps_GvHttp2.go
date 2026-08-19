@@ -328,14 +328,14 @@ func (r *AppGVHTTP2) Schema(ctx context.Context, req resource.SchemaRequest, res
 				Default:             stringdefault.StaticString("/var/log"),
 			},
 			"log_level": schema.ListAttribute{
-				MarkdownDescription: "Log verbosity flags. Allowed values: all, info, detail, fullparse. Default: [\"info\"].",
+				MarkdownDescription: "Log verbosity flags. Allowed values: info, detail, fullparse. Default: [\"info\"].",
 				ElementType:         types.StringType,
 				Optional:            true,
 				Computed:            true,
 				Default:             listdefault.StaticValue(defaultLogLevel),
 				Validators: []validator.List{
 					listvalidator.ValueStringsAre(
-						stringvalidator.OneOf("all", "info", "detail", "fullparse"),
+						stringvalidator.OneOf("info", "detail", "fullparse"),
 					),
 				},
 			},
