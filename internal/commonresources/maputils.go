@@ -242,7 +242,9 @@ type PortSourceModel struct {
 // TCP Control Flags
 type TcpControlModel struct {
 	Type  types.String `tfsdk:"type"`
-	Flags types.String `tfsdk:"flags"` // e.g. "SYN", "ACK", "FIN", comma-separated
+	Value types.String `tfsdk:"value"`
+	Mask  types.String `tfsdk:"mask"`
+	Pos   types.Int32  `tfsdk:"pos"`
 }
 
 // VLAN ID
@@ -280,7 +282,7 @@ type VxlanIdModel struct {
 	Type        types.String `tfsdk:"type"`
 	VxlanMin    types.Int32  `tfsdk:"vxlan_min"`
 	VxlanMax    types.Int32  `tfsdk:"vxlan_max"`
-	VxlanSubset types.String `tfsdk:"vxlan_subset"`
+	VxlanSubset types.String `tfsdk:"subnet"`
 }
 
 // The model for the rules, which is a combination of the above rule elements with an OR between
@@ -556,8 +558,10 @@ type PortSourceGo struct {
 }
 
 type TcpControlGo struct {
-	Type  string `json:"type"`  // "tcpControl"
-	Value string `json:"value"` // flag string
+	Type  string `json:"type"`           // "tcpCtl"
+	Value string `json:"value"`          // 1-byte hex TCP control value
+	Mask  string `json:"mask,omitempty"` // 1-byte hex TCP control mask
+	Pos   int32  `json:"pos"`            // nested level (0-3)
 }
 
 type VlanGo struct {
@@ -2340,8 +2344,39 @@ func tcpControlSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":  schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("tcpControl")},
-			"flags": schema.StringAttribute{Optional: true, MarkdownDescription: "TCP flags: SYN, ACK, FIN, RST, PSH, URG (comma-separated)"},
+			"type": schema.StringAttribute{
+				Computed: true,
+				Default:  stringdefault.StaticString("tcpCtl"),
+			},
+			"value": schema.StringAttribute{
+				MarkdownDescription: "TCP control value to match as a 1-byte hexadecimal value (exactly 2 hex characters, e.g. 12).",
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hexByteRegex,
+						"must be a 1-byte hexadecimal value (exactly 2 hex characters, e.g. 12)",
+					),
+				},
+			},
+			"mask": schema.StringAttribute{
+				MarkdownDescription: "Optional TCP control mask as a 1-byte hexadecimal value (exactly 2 hex characters, e.g. FF).",
+				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hexByteRegex,
+						"must be a 1-byte hexadecimal value (exactly 2 hex characters, e.g. FF)",
+					),
+				},
+			},
+			"pos": schema.Int32Attribute{
+				MarkdownDescription: "For tunneled/stacked TCP headers, which header to inspect. 0=any, 1=outer, 2=second, 3=third.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
 		},
 	}
 }
@@ -2396,15 +2431,99 @@ func vntagVifListIdSchema() schema.SingleNestedAttribute {
 	}
 }
 
+type vxlanRangeValidator struct{}
+
+func (v vxlanRangeValidator) Description(ctx context.Context) string {
+	return "vxlan_max must be greater than or equal to vxlan_min when both are set"
+}
+
+func (v vxlanRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vxlanRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VxlanIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VxlanMin.IsNull() || parent.VxlanMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VxlanMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max < min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VXLAN ID range",
+			fmt.Sprintf("vxlan_max (%d) cannot be less than vxlan_min (%d)", max, min),
+		)
+	}
+}
+
+type vxlanSubsetValidator struct{}
+
+func (v vxlanSubsetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vxlan_max is set"
+}
+
+func (v vxlanSubsetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vxlanSubsetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VxlanIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VxlanMax.IsNull() || parent.VxlanMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VXLAN ID subset",
+			"subnet can only be configured when vxlan_max is also configured.",
+		)
+	}
+}
+
 // VXLAN ID schema
 func vxlanIdSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":         schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vxlanId")},
-			"vxlan_min":    schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"vxlan_max":    schema.Int32Attribute{Optional: true},
-			"vxlan_subset": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("all")},
+			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vxlanId")},
+			"vxlan_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 16777215)}},
+			"vxlan_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 16777215), vxlanRangeValidator{}}},
+			"subnet": schema.StringAttribute{
+				Optional:  true,
+				Computed:  true,
+				Default:   stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vxlanSubsetValidator{},
+				},
+			},
 		},
 	}
 }
@@ -2999,10 +3118,15 @@ func ModelPortSourceToGo(_ context.Context, m *PortSourceModel) *PortSourceGo {
 }
 
 func ModelTcpControlToGo(_ context.Context, m *TcpControlModel) *TcpControlGo {
-	return &TcpControlGo{
+	tcpControl := &TcpControlGo{
 		Type:  m.Type.ValueString(),
-		Value: m.Flags.ValueString(),
+		Value: m.Value.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
 	}
+	if !m.Mask.IsNull() && !m.Mask.IsUnknown() && m.Mask.ValueString() != "" {
+		tcpControl.Mask = m.Mask.ValueString()
+	}
+	return tcpControl
 }
 
 func ModelVlanToGo(_ context.Context, m *VlanModel) *VlanGo {
@@ -3735,7 +3859,7 @@ func copyGoRuleGrouptoModel(
 			modelRules.PortDestination = GoPortDestinationToModel(ruleElements)
 		case "portSrc":
 			modelRules.PortSource = GoPortSourceToModel(ruleElements)
-		case "tcpControl":
+		case "tcpControl", "tcpCtl":
 			modelRules.TcpControl = GoTcpControlToModel(ruleElements)
 		case "vlan":
 			modelRules.Vlan = GoVlanToModel(ruleElements)
@@ -4284,10 +4408,20 @@ func GoPortSourceToModel(ruleElements map[string]any) *PortSourceModel {
 
 func GoTcpControlToModel(ruleElements map[string]any) *TcpControlModel {
 	m := &TcpControlModel{
-		Type: types.StringValue("tcpControl"),
+		Type: types.StringValue("tcpCtl"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "tcpCtl.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.Flags = types.StringValue(v.(string))
+		m.Value = types.StringValue(v.(string))
+	}
+	if v, ok := ruleElements["mask"]; ok {
+		if mask, ok := v.(string); ok && mask != "" {
+			m.Mask = types.StringValue(mask)
+		}
 	}
 	return m
 }
