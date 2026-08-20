@@ -261,6 +261,8 @@ type VntagDstVifIdModel struct {
 	Type   types.String `tfsdk:"type"`
 	VifMin types.Int32  `tfsdk:"vif_min"`
 	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"pos"`
 }
 
 // VN-Tag Source VIF ID
@@ -268,13 +270,17 @@ type VntagSrcVifIdModel struct {
 	Type   types.String `tfsdk:"type"`
 	VifMin types.Int32  `tfsdk:"vif_min"`
 	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"pos"`
 }
 
 // VN-Tag VIF List ID
 type VntagVifListIdModel struct {
-	Type      types.String `tfsdk:"type"`
-	ListIdMin types.Int32  `tfsdk:"list_id_min"`
-	ListIdMax types.Int32  `tfsdk:"list_id_max"`
+	Type   types.String `tfsdk:"type"`
+	VifMin types.Int32  `tfsdk:"vif_min"`
+	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"pos"`
 }
 
 // VXLAN ID
@@ -573,21 +579,27 @@ type VlanGo struct {
 }
 
 type VntagDstVifIdGo struct {
-	Type     string `json:"type"`               // "vntagDstVifId"
+	Type     string `json:"type"`               // "vntagDvifId"
 	Value    int32  `json:"value"`              // min VIF
 	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
 }
 
 type VntagSrcVifIdGo struct {
-	Type     string `json:"type"`               // "vntagSrcVifId"
+	Type     string `json:"type"`               // "vntagSvifId"
 	Value    int32  `json:"value"`              // min VIF
 	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
 }
 
 type VntagVifListIdGo struct {
 	Type     string `json:"type"`               // "vntagVifListId"
 	Value    int32  `json:"value"`              // min list ID
 	ValueMax int32  `json:"valueMax,omitempty"` // max list ID
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
 }
 
 type VxlanIdGo struct {
@@ -2400,10 +2412,114 @@ func vntagDstVifIdSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":    schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagDstVifId")},
-			"vif_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"vif_max": schema.Int32Attribute{Optional: true},
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagDvifId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+					vntagDstVifIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagDstVifIdSubnetValidator{},
+				},
+			},
+			"pos": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
 		},
+	}
+}
+
+type vntagDstVifIdRangeValidator struct{}
+
+func (v vntagDstVifIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than or equal to vif_min when both are set"
+}
+
+func (v vntagDstVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagDstVifIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagDstVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max < min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag destination VIF range",
+			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagDstVifIdSubnetValidator struct{}
+
+func (v vntagDstVifIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagDstVifIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagDstVifIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagDstVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag destination VIF subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
 	}
 }
 
@@ -2412,10 +2528,114 @@ func vntagSrcVifIdSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":    schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagSrcVifId")},
-			"vif_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"vif_max": schema.Int32Attribute{Optional: true},
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagSvifId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 4096),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 4096),
+					vntagSrcVifIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagSrcVifIdSubnetValidator{},
+				},
+			},
+			"pos": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
 		},
+	}
+}
+
+type vntagSrcVifIdRangeValidator struct{}
+
+func (v vntagSrcVifIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than or equal to vif_min when both are set"
+}
+
+func (v vntagSrcVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagSrcVifIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagSrcVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max < min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag source VIF range",
+			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagSrcVifIdSubnetValidator struct{}
+
+func (v vntagSrcVifIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagSrcVifIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagSrcVifIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagSrcVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag source VIF subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
 	}
 }
 
@@ -2424,10 +2644,114 @@ func vntagVifListIdSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":        schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagVifListId")},
-			"list_id_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0)},
-			"list_id_max": schema.Int32Attribute{Optional: true},
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagVifListId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+					vntagVifListIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagVifListIdSubnetValidator{},
+				},
+			},
+			"pos": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
 		},
+	}
+}
+
+type vntagVifListIdRangeValidator struct{}
+
+func (v vntagVifListIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than or equal to vif_min when both are set"
+}
+
+func (v vntagVifListIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagVifListIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagVifListIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max < min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag VIF list range",
+			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagVifListIdSubnetValidator struct{}
+
+func (v vntagVifListIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagVifListIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagVifListIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagVifListIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag VIF list subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
 	}
 }
 
@@ -2908,22 +3232,29 @@ func ModelIp4ProtoToGo(_ context.Context, m *Ip4ProtoRuleModel) *Ip4ProtoGo {
 	min := m.ProtocolMin.ValueInt32()
 
 	var maxStr string
+	maxConfigured := false
 	if !m.ProtocolMax.IsNull() && !m.ProtocolMax.IsUnknown() {
 		maxStr = strconv.FormatInt(int64(m.ProtocolMax.ValueInt32()), 10)
+		maxConfigured = true
 	}
 
-	subset := m.ProtocolSubset.ValueString()
-	if subset == "" || subset == "all" {
-		subset = "none" // FM encoding for “no subset filter”
-	}
-
-	return &Ip4ProtoGo{
+	ip4Proto := &Ip4ProtoGo{
 		Type:     m.Type.ValueString(), // "ip4Proto"
 		Pos:      m.Pos.ValueInt32(),
 		Value:    strconv.FormatInt(int64(min), 10),
 		ValueMax: maxStr,
-		Subset:   subset, // "none", "even", or "odd"
 	}
+
+	// subset is only meaningful when max is configured.
+	if maxConfigured {
+		subset := m.ProtocolSubset.ValueString()
+		if subset == "" || subset == "all" {
+			subset = "none" // FM encoding for “no subset filter”
+		}
+		ip4Proto.Subset = subset // "none", "even", or "odd"
+	}
+
+	return ip4Proto
 }
 
 func ModelErspanIdToGo(_ context.Context, m *ErspanIdRuleModel) *ErspanIdGo {
@@ -3154,10 +3485,20 @@ func ModelVntagDstVifIdToGo(_ context.Context, m *VntagDstVifIdModel) *VntagDstV
 	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
 		maxInt = m.VifMax.ValueInt32()
 	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	typeVal := m.Type.ValueString()
+	if typeVal == "" || typeVal == "vntagDstVifId" {
+		typeVal = "vntagDvifId"
+	}
 	return &VntagDstVifIdGo{
-		Type:     m.Type.ValueString(),
+		Type:     typeVal,
 		Value:    min,
 		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
 	}
 }
 
@@ -3167,23 +3508,39 @@ func ModelVntagSrcVifIdToGo(_ context.Context, m *VntagSrcVifIdModel) *VntagSrcV
 	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
 		maxInt = m.VifMax.ValueInt32()
 	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	typeVal := m.Type.ValueString()
+	if typeVal == "" || typeVal == "vntagSrcVifId" {
+		typeVal = "vntagSvifId"
+	}
 	return &VntagSrcVifIdGo{
-		Type:     m.Type.ValueString(),
+		Type:     typeVal,
 		Value:    min,
 		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
 	}
 }
 
 func ModelVntagVifListIdToGo(_ context.Context, m *VntagVifListIdModel) *VntagVifListIdGo {
-	min := m.ListIdMin.ValueInt32()
+	min := m.VifMin.ValueInt32()
 	var maxInt int32
-	if !m.ListIdMax.IsNull() && !m.ListIdMax.IsUnknown() {
-		maxInt = m.ListIdMax.ValueInt32()
+	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+		maxInt = m.VifMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
 	}
 	return &VntagVifListIdGo{
 		Type:     m.Type.ValueString(),
 		Value:    min,
 		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
 	}
 }
 
@@ -3863,9 +4220,9 @@ func copyGoRuleGrouptoModel(
 			modelRules.TcpControl = GoTcpControlToModel(ruleElements)
 		case "vlan":
 			modelRules.Vlan = GoVlanToModel(ruleElements)
-		case "vntagDstVifId":
+		case "vntagDstVifId", "vntagDvifId":
 			modelRules.VntagDstVifId = GoVntagDstVifIdToModel(ruleElements)
-		case "vntagSrcVifId":
+		case "vntagSrcVifId", "vntagSvifId":
 			modelRules.VntagSrcVifId = GoVntagSrcVifIdToModel(ruleElements)
 		case "vntagVifListId":
 			modelRules.VntagVifListId = GoVntagVifListIdToModel(ruleElements)
@@ -4131,19 +4488,23 @@ func GoIp4ProtoToModel(ruleElements map[string]any) *Ip4ProtoRuleModel {
 	}
 
 	// valueMax -> protocol_max (numeric; use anyToInt32)
+	maxConfigured := false
 	if v, ok := ruleElements["valueMax"]; ok {
 		m.ProtocolMax = types.Int32Value(anyToInt32(v, "matches.valueMax"))
+		maxConfigured = true
 	}
 
-	// subset -> protocol_subset; FM "none" stays as TF "none"
-	subset := "none"
-	if v, ok := ruleElements["subset"]; ok {
-		s := v.(string)
-		if s != "" && s != "none" {
-			subset = s // "even" or "odd"
+	// subset is only represented in TF state when protocol_max is present.
+	if maxConfigured {
+		subset := "none"
+		if v, ok := ruleElements["subset"]; ok {
+			s := v.(string)
+			if s != "" && s != "none" {
+				subset = s // "even" or "odd"
+			}
 		}
+		m.ProtocolSubset = types.StringValue(subset)
 	}
-	m.ProtocolSubset = types.StringValue(subset)
 
 	return m
 }
@@ -4451,39 +4812,72 @@ func GoVlanToModel(ruleElements map[string]any) *VlanModel {
 
 func GoVntagDstVifIdToModel(ruleElements map[string]any) *VntagDstVifIdModel {
 	m := &VntagDstVifIdModel{
-		Type: types.StringValue("vntagDstVifId"),
+		Type:   types.StringValue("vntagDvifId"),
+		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.VifMin = types.Int32Value(int32(v.(float64)))
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagDvifId.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.VifMax = types.Int32Value(int32(v.(float64)))
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagDvifId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagDvifId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
 	}
 	return m
 }
 
 func GoVntagSrcVifIdToModel(ruleElements map[string]any) *VntagSrcVifIdModel {
 	m := &VntagSrcVifIdModel{
-		Type: types.StringValue("vntagSrcVifId"),
+		Type:   types.StringValue("vntagSvifId"),
+		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.VifMin = types.Int32Value(int32(v.(float64)))
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagSvifId.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.VifMax = types.Int32Value(int32(v.(float64)))
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagSvifId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagSvifId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
 	}
 	return m
 }
 
 func GoVntagVifListIdToModel(ruleElements map[string]any) *VntagVifListIdModel {
 	m := &VntagVifListIdModel{
-		Type: types.StringValue("vntagVifListId"),
+		Type:   types.StringValue("vntagVifListId"),
+		Subnet: types.StringValue("none"),
 	}
 	if v, ok := ruleElements["value"]; ok {
-		m.ListIdMin = types.Int32Value(int32(v.(float64)))
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagVifListId.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.ListIdMax = types.Int32Value(int32(v.(float64)))
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagVifListId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagVifListId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
 	}
 	return m
 }
