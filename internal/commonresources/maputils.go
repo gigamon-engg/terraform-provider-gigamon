@@ -1941,9 +1941,7 @@ func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
 			},
 			"label_min": schema.Int32Attribute{
 				MarkdownDescription: "Lower bound (inclusive) of the IPv6 20-bit flow label, represented as a 3-byte hexadecimal value (0x000000-0x0FFFFF).",
-				Optional:            true,
-				Computed:            true,
-				Default:             int32default.StaticInt32(0),
+				Required:            true,
 				Validators: []validator.Int32{
 					int32validator.Between(0, 1048575),
 				},
@@ -2128,7 +2126,7 @@ func mplsLabelSchema() schema.SingleNestedAttribute {
 		Attributes: map[string]schema.Attribute{
 			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
 			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
-			"value_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"value_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
 			"value_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
 			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
 		},
@@ -2329,7 +2327,7 @@ func portDestinationSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
-			"port_min": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
 			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
 			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
 			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},

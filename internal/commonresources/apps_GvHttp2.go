@@ -14,6 +14,7 @@ package commonresources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -526,7 +527,8 @@ func (r *AppGVHTTP2) Read(ctx context.Context, req resource.ReadRequest, resp *r
 	}
 	fmData := FMGVHTTP2{}
 	if err := GetMSAppData(ctx, sessionID, rawID, gvhttp2AppName, "", &fmData, r.fmClient); err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		var fmErr *fmclient.FMErrors
+		if errors.As(err, &fmErr) && fmErr.ErrorCode() == fmclient.ObjectNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
