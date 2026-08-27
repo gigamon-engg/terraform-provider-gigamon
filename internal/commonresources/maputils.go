@@ -3042,6 +3042,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 								Attributes: map[string]schema.Attribute{
 									"applications": schema.ListNestedAttribute{
 										Optional: true,
+										Validators: []validator.List{
+											listvalidator.SizeAtLeast(1),
+										},
 										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 											"name": schema.StringAttribute{Required: true},
 										}},
@@ -3062,6 +3065,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 								Attributes: map[string]schema.Attribute{
 									"applications": schema.ListNestedAttribute{
 										Optional: true,
+										Validators: []validator.List{
+											listvalidator.SizeAtLeast(1),
+										},
 										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 											"name": schema.StringAttribute{Required: true},
 										}},
