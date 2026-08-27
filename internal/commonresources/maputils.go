@@ -1844,7 +1844,7 @@ func hostNameSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"type":            schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("srcHostPrefix")},
-			"src_host_prefix": schema.StringAttribute{Optional: true},
+			"src_host_prefix": schema.StringAttribute{Optional: true, Validators: []validator.String{stringvalidator.LengthAtLeast(1)}},
 		},
 	}
 }
@@ -2086,6 +2086,47 @@ func ipv6NextHeaderSchema() schema.SingleNestedAttribute {
 
 type mplsLabelSubnetValidator struct{}
 
+type mplsLabelRangeValidator struct{}
+
+func (v mplsLabelRangeValidator) Description(ctx context.Context) string {
+	return "value_max must be greater than value_min when both are set"
+}
+
+func (v mplsLabelRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v mplsLabelRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent MplsLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.ValueMin.IsNull() || parent.ValueMin.IsUnknown() {
+		return
+	}
+
+	min := parent.ValueMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid MPLS label range",
+			fmt.Sprintf("value_max (%d) must be greater than value_min (%d)", max, min),
+		)
+	}
+}
+
 func (v mplsLabelSubnetValidator) Description(ctx context.Context) string {
 	return "subnet can only be configured when value_max is set"
 }
@@ -2127,7 +2168,7 @@ func mplsLabelSchema() schema.SingleNestedAttribute {
 			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
 			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
 			"value_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
-			"value_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"value_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576), mplsLabelRangeValidator{}}},
 			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
 		},
 	}
@@ -2135,6 +2176,47 @@ func mplsLabelSchema() schema.SingleNestedAttribute {
 
 
 type portDestinationSubnetValidator struct{}
+
+type portDestinationRangeValidator struct{}
+
+func (v portDestinationRangeValidator) Description(ctx context.Context) string {
+	return "port_max must be greater than port_min when both are set"
+}
+
+func (v portDestinationRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portDestinationRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent PortDestinationModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMin.IsNull() || parent.PortMin.IsUnknown() {
+		return
+	}
+
+	min := parent.PortMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port destination range",
+			fmt.Sprintf("port_max (%d) must be greater than port_min (%d)", max, min),
+		)
+	}
+}
 
 func (v portDestinationSubnetValidator) Description(ctx context.Context) string {
 	return "subnet can only be configured when port_max is set"
@@ -2328,7 +2410,7 @@ func portDestinationSchema() schema.SingleNestedAttribute {
 		Attributes: map[string]schema.Attribute{
 			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
 			"port_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
-			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portDestinationRangeValidator{}}},
 			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
 			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},
 		},
