@@ -23,18 +23,60 @@
 #    <enable_code_coverage> optional parameter that enables code coverage in the binary
 #                 that is generated. Accepts true/false as the argument. Defaults to false
 
+RELEASE_VERSION_FILE="release_version.txt"
+TERRAFORM_VERSION_FILE="terraform_version.txt"
 
 set -xeuo pipefail
 
-function update_version {
-    version=`cat release_version.txt | cut -f 3 -d '.'`
-    ((version = version + 1))
-    new_version=`cat release_version.txt | cut -f '1 2' -d '.'` 
-    new_version="${new_version}.${version}"
-    echo creating version - $new_version
-    echo ${new_version} > release_version.txt
-    git add release_version.txt
-    git commit --message "Version updated"
+function update_versions {
+    local release_version terraform_version
+    local release_major release_minor release_patch
+    local terraform_major terraform_minor terraform_patch
+    local new_release_version new_terraform_version
+
+    release_version=$(tr -d '[:space:]' < "$RELEASE_VERSION_FILE")
+    terraform_version=$(tr -d '[:space:]' < "$TERRAFORM_VERSION_FILE")
+
+    if ! [[ "$release_version" =~ ^[0-9]+.[0-9]+.[0-9]{2}$ ]]; then
+        echo "Invalid release version: $release_version"
+        echo "Expected format: M.m.rr, for example 6.14.02"
+        exit 1
+    fi
+
+    if ! [[ "$terraform_version" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]]; then
+        echo "Invalid Terraform version: $terraform_version"
+        echo "Expected format: M.m.xxx, for example 6.14.341"
+        exit 1
+    fi
+
+    IFS='.' read -r release_major release_minor release_patch <<< "$release_version"
+    IFS='.' read -r terraform_major terraform_minor terraform_patch <<< "$terraform_version"
+
+    release_patch=$((10#$release_patch + 1))
+
+    if (( release_patch > 99 )); then
+        echo "Release number cannot exceed 99: $release_patch"
+        echo "Update the major/minor version in release_version.txt."
+        exit 1
+    fi
+
+    terraform_patch=$((10#$terraform_patch + 1))
+
+    new_release_version=$(printf "%s.%s.%02d" \
+        "$release_major" "$release_minor" "$release_patch")
+
+    new_terraform_version=$(printf "%s.%s.%d" \
+        "$release_major" "$release_minor" "$terraform_patch")
+
+    echo "Creating release version: $new_release_version"
+    echo "Creating Terraform version: $new_terraform_version"
+
+    printf '%s\n' "$new_release_version" > "$RELEASE_VERSION_FILE"
+    printf '%s\n' "$new_terraform_version" > "$TERRAFORM_VERSION_FILE"
+
+    git add "$RELEASE_VERSION_FILE" "$TERRAFORM_VERSION_FILE"
+    git commit --message \
+        "Version updated: release ${new_release_version}, Terraform ${new_terraform_version}"
     git push
 }
 
@@ -97,16 +139,10 @@ function validate_arguments {
 
     # Bump up the version by 1, and commit that back to the repo
 
-    update_version
+    update_versions
 
-    version=`cat release_version.txt`
-    if ! echo $version | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > /dev/null 2>&1; then
-        echo "Error: Version not in the proper format"
-        echo "Versino: should be of the format M.m.p"
-        echo "where M - major, m - minor and p - patch are all integers"
-        echo "got version as $2"
-        exit 1
-    fi
+    release_version=$(tr -d '[:space:]' < "$RELEASE_VERSION_FILE")
+    terraform_version=$(tr -d '[:space:]' < "$TERRAFORM_VERSION_FILE")
 }
 
 # Given the version, os and arch sets up the artifact for this combination
@@ -141,17 +177,19 @@ fi
 script_source="$( cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
 base_dir=`dirname $script_source`
 
-version=`cat release_version.txt`
+release_version=$(tr -d '[:space:]' < "$RELEASE_VERSION_FILE")
+terraform_version=$(tr -d '[:space:]' < "$TERRAFORM_VERSION_FILE")
 
 # Loop over the build variants and set up each of these in the artifact
 for os in "${!build_variants[@]}"; do
     declare -a arch_list=(${build_variants[$os]})
     for arch in "${arch_list[@]}"; do
         echo "OS: ${os}, arch: ${arch}"
-        build_artifact $base_dir $version $os $arch "$code_coverage"
+        build_artifact "$base_dir" "$terraform_version" "$os" "$arch" "$code_coverage"
     done
 done
 
 # Tag the repo with this version
-git tag --annotate v$version --message "Release Version $version"
-git push origin v$version
+git tag --annotate "v${release_version}" --message "Release Version ${release_version}"
+git push origin "v${release_version}"
+
