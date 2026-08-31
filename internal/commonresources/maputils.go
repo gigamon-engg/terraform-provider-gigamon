@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -198,8 +199,8 @@ type HostNameModel struct {
 type Ipv6FlowLabelModel struct {
 	Type     types.String `tfsdk:"type"`
 	Pos      types.Int32  `tfsdk:"pos"`        // 0..3, default 0
-	LabelMin types.Int32  `tfsdk:"label_min"` // 20-bit flow label, represented as a 3-byte hex value
-	LabelMax types.Int32  `tfsdk:"label_max"` // optional range max
+	LabelMin types.String `tfsdk:"label_min"` // 20-bit flow label as hex string, e.g. 0x1 or FFFFF
+	LabelMax types.String `tfsdk:"label_max"` // optional range max as hex string
 	Subnet   types.String `tfsdk:"subnet"`    // "none", "even", or "odd"
 }
 
@@ -526,8 +527,8 @@ type HostNameGo struct {
 type Ipv6FlowLabelGo struct {
 	Type     string `json:"type"`               // "ip6Flow"
 	Pos      int32  `json:"pos"`               // label position (0-3)
-	Value    int32  `json:"value"`              // min label
-	ValueMax int32  `json:"valueMax,omitempty"` // max label
+	Value    string `json:"value"`              // min label (hex string)
+	ValueMax string `json:"valueMax,omitempty"` // max label (hex string)
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
@@ -621,6 +622,8 @@ var ipv6NetmaskRegex = regexp.MustCompile(`^([0-9A-F]{4}:){7}[0-9A-F]{4}$`)
 
 var hexByteRegex = regexp.MustCompile(`^[0-9A-Fa-f]{2}$`)
 var hex4ByteRegex = regexp.MustCompile(`^[0-9A-Fa-f]{8}$`)
+var teidHexRegex = regexp.MustCompile(`(?i)^(0x)?[0-9a-f]{1,8}$`)
+var flowLabelHexRegex = regexp.MustCompile(`(?i)^(0x)?[0-9a-f]{1,6}$`)
 
 // RulesGo represent a rule, which is an element in the pass/drop rules array in the swagger.
 // Matches here is got from the RulesModel, where each non-null element of the RulesModel
@@ -1747,11 +1750,13 @@ func (v gtpuTeidRangeValidator) ValidateString(
 		return
 	}
 
-	minVal, err := strconv.ParseUint(parent.TeidMin.ValueString(), 16, 32)
+	minStr := strings.TrimPrefix(strings.TrimPrefix(parent.TeidMin.ValueString(), "0x"), "0X")
+	maxStr := strings.TrimPrefix(strings.TrimPrefix(req.ConfigValue.ValueString(), "0x"), "0X")
+	minVal, err := strconv.ParseUint(minStr, 16, 32)
 	if err != nil {
 		return
 	}
-	maxVal, err := strconv.ParseUint(req.ConfigValue.ValueString(), 16, 32)
+	maxVal, err := strconv.ParseUint(maxStr, 16, 32)
 	if err != nil {
 		return
 	}
@@ -1810,8 +1815,8 @@ func gtpuTeidSchema() schema.SingleNestedAttribute {
 				Required: true,
 				Validators: []validator.String{
 					stringvalidator.RegexMatches(
-						hex4ByteRegex,
-						"must be a 4-byte hexadecimal value (exactly 8 hex characters, e.g. 00000001)",
+						teidHexRegex,
+						"must be a hex value with optional 0x prefix, 1-8 hex digits (e.g. 0x1, 00000001, 0xABCD1234)",
 					),
 				},
 			},
@@ -1819,8 +1824,8 @@ func gtpuTeidSchema() schema.SingleNestedAttribute {
 				Optional: true,
 				Validators: []validator.String{
 					stringvalidator.RegexMatches(
-						hex4ByteRegex,
-						"must be a 4-byte hexadecimal value (exactly 8 hex characters, e.g. 000000FF)",
+						teidHexRegex,
+						"must be a hex value with optional 0x prefix, 1-8 hex digits (e.g. 0x1, 000000FF, 0xABCD1234)",
 					),
 					gtpuTeidRangeValidator{},
 				},
@@ -1859,10 +1864,10 @@ func (v ipv6FlowLabelRangeValidator) MarkdownDescription(ctx context.Context) st
 	return v.Description(ctx)
 }
 
-func (v ipv6FlowLabelRangeValidator) ValidateInt32(
+func (v ipv6FlowLabelRangeValidator) ValidateString(
 	ctx context.Context,
-	req validator.Int32Request,
-	resp *validator.Int32Response,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
 ) {
 	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
 		return
@@ -1879,13 +1884,21 @@ func (v ipv6FlowLabelRangeValidator) ValidateInt32(
 		return
 	}
 
-	min := parent.LabelMin.ValueInt32()
-	max := req.ConfigValue.ValueInt32()
-	if max <= min {
+	minStr := strings.TrimPrefix(strings.TrimPrefix(parent.LabelMin.ValueString(), "0x"), "0X")
+	maxStr := strings.TrimPrefix(strings.TrimPrefix(req.ConfigValue.ValueString(), "0x"), "0X")
+	minVal, err := strconv.ParseUint(minStr, 16, 32)
+	if err != nil {
+		return
+	}
+	maxVal, err := strconv.ParseUint(maxStr, 16, 32)
+	if err != nil {
+		return
+	}
+	if maxVal <= minVal {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid IPv6 flow-label range",
-			fmt.Sprintf("label_max (%d) must be greater than label_min (%d)", max, min),
+			fmt.Sprintf("label_max (%s) must be greater than label_min (%s)", req.ConfigValue.ValueString(), parent.LabelMin.ValueString()),
 		)
 	}
 }
@@ -1916,7 +1929,7 @@ func (v ipv6FlowLabelSubnetValidator) ValidateString(
 		return
 	}
 
-	if parent.LabelMax.IsNull() || parent.LabelMax.IsUnknown() {
+	if parent.LabelMax.IsNull() || parent.LabelMax.IsUnknown() || parent.LabelMax.ValueString() == "" {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid IPv6 flow-label subnet",
@@ -1939,18 +1952,24 @@ func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
 					int32validator.Between(0, 3),
 				},
 			},
-			"label_min": schema.Int32Attribute{
-				MarkdownDescription: "Lower bound (inclusive) of the IPv6 20-bit flow label, represented as a 3-byte hexadecimal value (0x000000-0x0FFFFF).",
+			"label_min": schema.StringAttribute{
+				MarkdownDescription: "Lower bound (inclusive) of the IPv6 20-bit flow label as hex (optional 0x prefix, 1-6 hex digits, e.g. 0x1 or FFFFF).",
 				Required:            true,
-				Validators: []validator.Int32{
-					int32validator.Between(0, 1048575),
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						flowLabelHexRegex,
+						"must be a hex value with optional 0x prefix and 1-6 hex digits (e.g. 0x1, FFFFF, 0xABCDE)",
+					),
 				},
 			},
-			"label_max": schema.Int32Attribute{
-				MarkdownDescription: "Upper bound (inclusive) of the IPv6 20-bit flow label, represented as a 3-byte hexadecimal value (0x000000-0x0FFFFF).",
+			"label_max": schema.StringAttribute{
+				MarkdownDescription: "Upper bound (inclusive) of the IPv6 20-bit flow label as hex (optional 0x prefix, 1-6 hex digits, e.g. 0x1 or FFFFF).",
 				Optional:            true,
-				Validators: []validator.Int32{
-					int32validator.Between(0, 1048575),
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						flowLabelHexRegex,
+						"must be a hex value with optional 0x prefix and 1-6 hex digits (e.g. 0x1, FFFFF, 0xABCDE)",
+					),
 					ipv6FlowLabelRangeValidator{},
 				},
 			},
@@ -3436,20 +3455,15 @@ func ModelGtpuTeidToGo(_ context.Context, m *GtpuTeidModel) *GtpuTeidGo {
 	if subset == "" || subset == "all" {
 		subset = "none"
 	}
-	
-	// Parse hex strings to int32, then format as decimal for API
-	minVal, _ := strconv.ParseInt(m.TeidMin.ValueString(), 16, 32)
-	minStr := strconv.FormatInt(minVal, 10)
-	
+
 	g := &GtpuTeidGo{
 		Type:   m.Type.ValueString(),
 		Pos:    m.Pos.ValueInt32(),
-		Value:  minStr,
+		Value:  m.TeidMin.ValueString(),
 		Subset: subset,
 	}
 	if !m.TeidMax.IsNull() && !m.TeidMax.IsUnknown() {
-		maxVal, _ := strconv.ParseInt(m.TeidMax.ValueString(), 16, 32)
-		g.ValueMax = strconv.FormatInt(maxVal, 10)
+		g.ValueMax = m.TeidMax.ValueString()
 	}
 	return g
 }
@@ -3465,10 +3479,10 @@ func ModelIpv6FlowLabelToGo(_ context.Context, m *Ipv6FlowLabelModel) *Ipv6FlowL
 	label := &Ipv6FlowLabelGo{
 		Type:  "ip6Flow",
 		Pos:   m.Pos.ValueInt32(),
-		Value: m.LabelMin.ValueInt32(),
+		Value: m.LabelMin.ValueString(),
 	}
-	if !m.LabelMax.IsNull() && !m.LabelMax.IsUnknown() {
-		label.ValueMax = m.LabelMax.ValueInt32()
+	if !m.LabelMax.IsNull() && !m.LabelMax.IsUnknown() && m.LabelMax.ValueString() != "" {
+		label.ValueMax = m.LabelMax.ValueString()
 		label.Subset = m.Subnet.ValueString()
 	}
 	return label
@@ -4745,18 +4759,20 @@ func GoHostNameToModel(ruleElements map[string]any) *HostNameModel {
 
 func GoIpv6FlowLabelToModel(ruleElements map[string]any) *Ipv6FlowLabelModel {
 	m := &Ipv6FlowLabelModel{
-		Type:   types.StringValue("ip6Flow"),
-		Pos:    types.Int32Value(0),
-		Subnet: types.StringValue("none"),
+		Type:     types.StringValue("ip6Flow"),
+		Pos:      types.Int32Value(0),
+		LabelMin: types.StringNull(),
+		LabelMax: types.StringNull(),
+		Subnet:   types.StringValue("none"),
 	}
 	if v, ok := ruleElements["pos"]; ok {
 		m.Pos = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.pos"))
 	}
-	if v, ok := ruleElements["value"]; ok {
-		m.LabelMin = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.value"))
+	if v, ok := ruleElements["value"]; ok && v != nil {
+		m.LabelMin = types.StringValue(fmt.Sprintf("%v", v))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.LabelMax = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.valueMax"))
+		m.LabelMax = types.StringValue(fmt.Sprintf("%v", v))
 	}
 	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
 		m.Subnet = types.StringValue(v.(string))
