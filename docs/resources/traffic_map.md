@@ -502,6 +502,12 @@ Each rule may include zero or more of the following match condition blocks. At l
 - `ipv4_ttl` – Match on IPv4 TTL
 - `ipv4_tos` – Match on IPv4 TOS byte
 - `gre_key` – Match on GRE key
+- `gtp_teid` – Match on GTP-U Tunnel Endpoint ID
+- `host_name` – Match on source host name prefix
+- `ipv6_flow_label` – Match on IPv6 Flow Label
+- `ipv6_next_header` – Match on IPv6 Next Header protocol
+- `mpls_label` – Match on MPLS label value
+- `port_destination` – Match on destination port
 
 ---
 
@@ -741,6 +747,499 @@ gre_key = {
 * `gre_key_min` (String, **Required**) – Lower bound as 4-byte hex (8 hex digits).
 * `gre_key_max` (String, Optional) – Upper bound as 4-byte hex; must be greater than `gre_key_min` if set.
 * `gre_key_subset` (String, Optional, default `"all"`) – `"all"`, `"even"`, or `"odd"` (requires `gre_key_max` for even/odd).
+
+---
+
+### `gtp_teid`
+
+Matches the GTP-U Tunnel Endpoint Identifier (TEID) field in GTP-U user-plane traffic.
+The TEID is a 32-bit value represented as a 4-byte hexadecimal string.
+
+```hcl
+gtp_teid = {
+  teid_min           = "00000001"
+  nested_level_count = 0
+  subnet             = "none"
+}
+```
+
+Or with a range:
+
+```hcl
+gtp_teid = {
+  teid_min           = "00001000"
+  teid_max           = "00001FFF"
+  nested_level_count = 0
+  subnet             = "all"
+}
+```
+
+* `teid_min` (String, **Required**) – Lower bound as 4-byte hex (exactly 8 hex characters, e.g. `"00000001"`). Range: `"00000000"` to `"FFFFFFFF"`.
+* `teid_max` (String, Optional) – Upper bound as 4-byte hex; must be greater than `teid_min` when set.
+* `nested_level_count` (Number, Optional, default `0`, range 0–3) – GTP-U header depth for tunneled traffic. `0` = any level.
+* `subnet` (String, Optional, default `"none"`) – Restrict matches within [teid_min, teid_max] to `"none"`, `"even"`, or `"odd"`. Requires `teid_max` when set to `"even"` or `"odd"`.
+
+---
+
+### `host_name`
+
+Matches traffic based on source host name prefix.
+This condition applies to the source host name field and matches by prefix (not wildcard).
+
+```hcl
+host_name = {
+  src_host_prefix = "api.example.com"
+}
+```
+
+* `src_host_prefix` (String, Optional) – Host name prefix to match. The match is prefix-based: a prefix `"api"` will match hostnames starting with `"api"` (e.g. `"api.example.com"`, `"api-server"`). Exact match is performed when the full hostname is specified.
+
+---
+
+### `ipv6_flow_label`
+
+Matches the 20-bit IPv6 Flow Label field.
+The flow label is a 20-bit value, represented as a numeric value in the range 0 through 1,048,575 (0x000000–0x0FFFFF).
+
+```hcl
+ipv6_flow_label = {
+  label_min = 291      # decimal; 0x00123 in hex
+  pos       = 0
+  subnet    = "none"
+}
+```
+
+Or with a range:
+
+```hcl
+ipv6_flow_label = {
+  label_min = 256      # decimal; 0x00100 in hex
+  label_max = 511      # decimal; 0x001FF in hex
+  pos       = 0
+  subnet    = "all"
+}
+```
+
+* `label_min` (Number, **Required**) – Lower bound (inclusive), 0–1,048,575 (20-bit range).
+* `label_max` (Number, Optional) – Upper bound (inclusive), 0–1,048,575; must be greater than `label_min` when set.
+* `pos` (Number, Optional, default `0`, range 0–3) – IPv6 header position in stacked/tunneled traffic. `0` = any level, `1` = outermost, `2` = second, `3` = third.
+* `subnet` (String, Optional, default `"none"`) – Restrict matches within [label_min, label_max] to `"none"`, `"even"`, or `"odd"`. Requires `label_max` when set to `"even"` or `"odd"`.
+
+---
+
+### `ipv6_next_header`
+
+Matches the IPv6 Next Header protocol field (0–255).
+This condition applies to the Next Header field in the IPv6 header and is independent of IPv4 protocol matching.
+
+```hcl
+ipv6_next_header = {
+  header_min = 6       # TCP
+  pos        = 0
+  subnet     = "none"
+}
+```
+
+Or with a range:
+
+```hcl
+ipv6_next_header = {
+  header_min = 6       # TCP
+  header_max = 17      # UDP
+  pos        = 0
+  subnet     = "all"
+}
+```
+
+* `header_min` (Number, **Required**) – Lower bound (inclusive), 0–255. Common values: `6` (TCP), `17` (UDP), `58` (ICMPv6).
+* `header_max` (Number, Optional) – Upper bound (inclusive), 0–255; must be greater than `header_min` when set.
+* `pos` (Number, Optional, default `0`, range 0–3) – IPv6 header position in stacked/tunneled traffic. `0` = any level.
+* `subnet` (String, Optional, default `"none"`) – Restrict matches within [header_min, header_max] to `"none"`, `"even"`, or `"odd"`. Requires `header_max` when set to `"even"` or `"odd"`.
+
+---
+
+### `mpls_label`
+
+Matches an MPLS label value in the MPLS label stack.
+
+```hcl
+mpls_label = {
+  value_min = 100
+  pos       = 0
+  subnet    = "none"
+}
+```
+
+Or with a range:
+
+```hcl
+mpls_label = {
+  value_min = 100
+  value_max = 200
+  pos       = 0
+  subnet    = "all"
+}
+```
+
+* `value_min` (Number, **Required**) – Lower bound (inclusive), 1–1,048,576. Standard MPLS label range is typically 1–1,048,575 for user labels.
+* `value_max` (Number, Optional) – Upper bound (inclusive), 1–1,048,576; must be greater than `value_min` when set.
+* `pos` (Number, Optional, default `0`, range 0–4) – MPLS label position in the label stack. `0` = outermost label, `1` = second label, etc.
+* `subnet` (String, Optional, default `"none"`) – Restrict matches within [value_min, value_max] to `"none"`, `"even"`, or `"odd"`. Requires `value_max` when set to `"even"` or `"odd"`.
+
+---
+
+### `port_destination`
+
+Matches the Layer-4 destination port (TCP or UDP).
+The port range is 0–65,535. Note that protocol matching (TCP/UDP vs other protocols) is typically configured using a separate `ipv4_protocol` or `ipv6_next_header` condition.
+
+```hcl
+port_destination = {
+  port_min = 443       # HTTPS
+  pos      = 0
+  subnet   = "none"
+}
+```
+
+Or with a range:
+
+```hcl
+port_destination = {
+  port_min = 8000
+  port_max = 8100
+  pos      = 0
+  subnet   = "all"
+}
+```
+
+* `port_min` (Number, **Required**) – Lower bound (inclusive), 0–65,535.
+* `port_max` (Number, Optional) – Upper bound (inclusive), 0–65,535; must be greater than `port_min` when set.
+* `pos` (Number, Optional, default `0`, range 0–3) – Transport header position in stacked/tunneled traffic. `0` = any level, `1` = outermost, etc.
+* `subnet` (String, Optional, default `"none"`) – Restrict matches within [port_min, port_max] to `"none"`, `"even"`, or `"odd"`. Requires `port_max` when set to `"even"` or `"odd"`.
+
+---
+
+## Phase 2 Map Conditions: Validation and Version Notes
+
+### Terraform Schema Names vs. FM/UI Type Names
+
+The Terraform provider uses user-friendly schema names that differ from the internal FM type identifiers:
+
+| Terraform Block Name | FM Type Name | Description |
+|---|---|---|
+| `gtp_teid` | `gtputeId` | GTP-U Tunnel Endpoint ID |
+| `host_name` | `srcHostPrefix` | Source host name prefix |
+| `ipv6_flow_label` | `ip6Flow` | IPv6 Flow Label |
+| `ipv6_next_header` | `ipv6NextHeader` | IPv6 Next Header protocol |
+| `mpls_label` | `mplsLabel` | MPLS label value |
+| `port_destination` | `portDst` | Layer-4 destination port |
+
+Users should always use the Terraform block names (left column) in their configurations. The FM type names (right column) are internal representations and should never be used in Terraform code.
+
+### Range and Subset Behavior
+
+All Phase 2 conditions support optional range matching with `*_max` fields and subset filtering with the `subnet` attribute:
+
+- **Single value:** Specify only `*_min` to match a single value.
+- **Range matching:** Specify both `*_min` and `*_max` (inclusive) to match all values in the range.
+- **Subset filtering:** When both `*_min` and `*_max` are set, use `subnet` to restrict matches:
+  - `"none"` (default) – Match all values in [min, max].
+  - `"even"` – Match only even values in [min, max].
+  - `"odd"` – Match only odd values in [min, max].
+  - If `subnet` is set to `"even"` or `"odd"`, `*_max` must be explicitly provided.
+
+### Position (pos) and Header Depth
+
+Conditions supporting `pos` (or `nested_level_count` for GTP-U TEID) allow matching at different header depths in stacked or tunneled traffic:
+
+- `0` (default) – Match any header depth (most common).
+- `1` – Match the outermost/first header.
+- `2` – Match the second header.
+- `3` – Match the third header.
+- `4` (only for MPLS) – Match the fourth header.
+
+For most use cases, the default value of `0` is appropriate. Specify a non-zero position only when dealing with header-stacked traffic (e.g., tunnel-in-tunnel or multiple VLAN/MPLS layers).
+
+### Provider Validation Rules
+
+The Terraform provider enforces the following validation constraints:
+
+**GTP-U TEID (`gtp_teid`):**
+- `teid_min` must be a valid 4-byte hex string (8 characters).
+- If `teid_max` is set, it must be greater than `teid_min`.
+- `subnet` requires `teid_max` when set to `"even"` or `"odd"`.
+
+**Host Name (`host_name`):**
+- `src_host_prefix` must be a non-empty string.
+- Matching is prefix-based; wildcards are not supported.
+
+**IPv6 Flow Label (`ipv6_flow_label`):**
+- `label_min` must be between 0 and 1,048,575.
+- If `label_max` is set, it must be between 0 and 1,048,575 and greater than `label_min`.
+- `subnet` requires `label_max` when set to `"even"` or `"odd"`.
+
+**IPv6 Next Header (`ipv6_next_header`):**
+- `header_min` must be between 0 and 255.
+- If `header_max` is set, it must be between 0 and 255 and greater than `header_min`.
+- `subnet` requires `header_max` when set to `"even"` or `"odd"`.
+- Common protocol values: `6` (TCP), `17` (UDP), `58` (ICMPv6).
+
+**MPLS Label (`mpls_label`):**
+- `value_min` must be between 1 and 1,048,576.
+- If `value_max` is set, it must be between 1 and 1,048,576 and greater than `value_min`.
+- `subnet` requires `value_max` when set to `"even"` or `"odd"`.
+- Standard user-label range is 16 to 1,048,575 (0–15 are reserved).
+
+**Port Destination (`port_destination`):**
+- `port_min` must be between 0 and 65,535.
+- If `port_max` is set, it must be between 0 and 65,535 and greater than `port_min`.
+- `subnet` requires `port_max` when set to `"even"` or `"odd"`.
+- This condition typically matches TCP and UDP ports; pair with `ipv4_protocol` or `ipv6_next_header` to restrict to specific protocols.
+
+### Common Configuration Errors
+
+- **Omitting range values:** If `subnet` is set to `"even"` or `"odd"`, the provider will return an error if `*_max` is not also specified.
+- **Invalid hex formats:** GTP-U TEID values must be exactly 8 hex characters. Leading zeros are required (e.g., `"00000001"`, not `"1"`).
+- **Value bounds:** Out-of-range values (e.g., label > 1,048,575 or port > 65,535) will cause validation errors during `terraform plan`.
+- **Mutually exclusive fields:** Do not mix single-value fields (like `teid_min` alone) with range fields in the same block unless explicitly documented as supporting both patterns.
+
+---
+
+## Combined Examples with Phase 2 Conditions
+
+### Example: IPv6 TCP traffic matching multiple conditions
+
+```hcl
+resource "gigamon_traffic_map" "ipv6_tcp_traffic" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "ipv6-tcp-traffic-map"
+  description           = "Match IPv6 TCP traffic on port 443 (HTTPS) with specific flow label"
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 10
+
+      pass_rules = [
+        {
+          rule_id = 1
+
+          # Match IPv6 header
+          ip_version = {
+            ip_version = "v6"
+          }
+
+          # Match TCP (protocol 6)
+          ipv6_next_header = {
+            header_min = 6
+            pos        = 0
+          }
+
+          # Match HTTPS destination port
+          port_destination = {
+            port_min = 443
+            pos      = 0
+          }
+
+          # Match specific flow label range
+          ipv6_flow_label = {
+            label_min = 256
+            label_max = 512
+            pos       = 0
+            subnet    = "all"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example: GTP-U traffic filtering
+
+```hcl
+resource "gigamon_traffic_map" "gtp_u_filter" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "gtp-u-filter-map"
+  description           = "Filter GTP-U traffic by TEID and forward to tool"
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 15
+
+      pass_rules = [
+        {
+          rule_id = 1
+
+          # Match GTP-U TEID in range
+          gtp_teid = {
+            teid_min           = "00000100"
+            teid_max           = "000001FF"
+            nested_level_count = 0
+            subnet             = "all"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+resource "gigamon_link" "gtp_u_to_tool" {
+  monitoring_session_id = gigamon_traffic_map.gtp_u_filter.id
+
+  source_id     = gigamon_traffic_map.gtp_u_filter.id
+  source_aep_id = 15
+
+  dest_id = gigamon_application.analysis_tool.id
+}
+```
+
+### Example: MPLS traffic with drop rules
+
+```hcl
+resource "gigamon_traffic_map" "mpls_drop_rules" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "mpls-traffic-map"
+  description           = "Route MPLS traffic; drop reserved labels"
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 20
+
+      # Pass all MPLS traffic in normal range
+      pass_rules = [
+        {
+          rule_id = 1
+          mpls_label = {
+            value_min = 16            # First usable label
+            value_max = 1048575       # Last standard label
+            pos       = 0
+            subnet    = "none"
+          }
+        }
+      ]
+
+      # Drop reserved labels (0–15)
+      drop_rules = [
+        {
+          rule_id = 1
+          mpls_label = {
+            value_min = 0
+            value_max = 15
+            pos       = 0
+            subnet    = "none"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example: Host name matching for request routing
+
+```hcl
+resource "gigamon_traffic_map" "host_name_routing" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "host-name-routing-map"
+  description           = "Route traffic based on source host name"
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 25
+
+      # Route API server traffic
+      pass_rules = [
+        {
+          rule_id = 1
+          host_name = {
+            src_host_prefix = "api-server"
+          }
+        },
+        # Route web server traffic (OR'd with above)
+        {
+          rule_id = 2
+          host_name = {
+            src_host_prefix = "web-srv"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example: Multi-condition rule combining IPv6, MPLS, and port matching
+
+```hcl
+resource "gigamon_traffic_map" "multi_condition_map" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "multi-condition-map"
+  description           = "Advanced traffic map with multiple Phase 2 conditions"
+
+  rule_sets = [
+    {
+      rule_set_id = "1"
+      priority    = 1
+      aep_id      = 30
+
+      pass_rules = [
+        {
+          rule_id = 1
+
+          # AND conditions: Match IPv6 traffic
+          ip_version = {
+            ip_version = "v6"
+          }
+
+          # Match MPLS outer label
+          mpls_label = {
+            value_min = 100
+            value_max = 200
+            pos       = 0
+            subnet    = "none"
+          }
+
+          # Match destination port range
+          port_destination = {
+            port_min = 5000
+            port_max = 6000
+            pos      = 0
+            subnet   = "all"
+          }
+        },
+
+        # Alternative pass rule: GTP-U traffic (OR'd with above)
+        {
+          rule_id = 2
+          gtp_teid = {
+            teid_min = "00000001"
+            subnet   = "none"
+          }
+        }
+      ]
+
+      # Drop reserved MPLS labels in this traffic class
+      drop_rules = [
+        {
+          rule_id = 1
+          mpls_label = {
+            value_min = 0
+            value_max = 15
+            pos       = 0
+          }
+        }
+      ]
+    }
+  ]
+}
 
 ---
 
