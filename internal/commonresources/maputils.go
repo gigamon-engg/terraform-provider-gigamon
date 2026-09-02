@@ -426,7 +426,7 @@ type L2MacAddrGo struct {
 
 type IpVersionGo struct {
 	Type  string `json:"type"`
-	Pos   int32  `json:"pos,omitempty"`
+	Pos   int32  `json:"pos"`
 	Value string `json:"value"` // "v4" or "v6"
 }
 
@@ -2320,7 +2320,7 @@ func (v portSourceSubnetValidator) Description(ctx context.Context) string {
 type vlanRangeValidator struct{}
 
 func (v vlanRangeValidator) Description(ctx context.Context) string {
-	return "vlan_max must be greater than or equal to vlan_min when both are set"
+	return "vlan_max must be greater than vlan_min when both are set"
 }
 
 func (v vlanRangeValidator) MarkdownDescription(ctx context.Context) string {
@@ -2349,11 +2349,11 @@ func (v vlanRangeValidator) ValidateInt32(
 
 	min := parent.VlanMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid VLAN range",
-			fmt.Sprintf("vlan_max (%d) cannot be less than vlan_min (%d)", max, min),
+			fmt.Sprintf("vlan_max (%d) must be greater than vlan_min (%d)", max, min),
 		)
 	}
 }
@@ -2549,7 +2549,7 @@ func vntagDstVifIdSchema() schema.SingleNestedAttribute {
 type vntagDstVifIdRangeValidator struct{}
 
 func (v vntagDstVifIdRangeValidator) Description(ctx context.Context) string {
-	return "vif_max must be greater than or equal to vif_min when both are set"
+	return "vif_max must be greater than vif_min when both are set"
 }
 
 func (v vntagDstVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
@@ -2578,11 +2578,11 @@ func (v vntagDstVifIdRangeValidator) ValidateInt32(
 
 	min := parent.VifMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid VN-Tag destination VIF range",
-			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
 		)
 	}
 }
@@ -2665,7 +2665,7 @@ func vntagSrcVifIdSchema() schema.SingleNestedAttribute {
 type vntagSrcVifIdRangeValidator struct{}
 
 func (v vntagSrcVifIdRangeValidator) Description(ctx context.Context) string {
-	return "vif_max must be greater than or equal to vif_min when both are set"
+	return "vif_max must be greater than vif_min when both are set"
 }
 
 func (v vntagSrcVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
@@ -2694,11 +2694,11 @@ func (v vntagSrcVifIdRangeValidator) ValidateInt32(
 
 	min := parent.VifMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid VN-Tag source VIF range",
-			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
 		)
 	}
 }
@@ -2781,7 +2781,7 @@ func vntagVifListIdSchema() schema.SingleNestedAttribute {
 type vntagVifListIdRangeValidator struct{}
 
 func (v vntagVifListIdRangeValidator) Description(ctx context.Context) string {
-	return "vif_max must be greater than or equal to vif_min when both are set"
+	return "vif_max must be greater than vif_min when both are set"
 }
 
 func (v vntagVifListIdRangeValidator) MarkdownDescription(ctx context.Context) string {
@@ -2810,11 +2810,11 @@ func (v vntagVifListIdRangeValidator) ValidateInt32(
 
 	min := parent.VifMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid VN-Tag VIF list range",
-			fmt.Sprintf("vif_max (%d) cannot be less than vif_min (%d)", max, min),
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
 		)
 	}
 }
@@ -2857,7 +2857,7 @@ func (v vntagVifListIdSubnetValidator) ValidateString(
 type vxlanRangeValidator struct{}
 
 func (v vxlanRangeValidator) Description(ctx context.Context) string {
-	return "vxlan_max must be greater than or equal to vxlan_min when both are set"
+	return "vxlan_max must be greater than vxlan_min when both are set"
 }
 
 func (v vxlanRangeValidator) MarkdownDescription(ctx context.Context) string {
@@ -2886,11 +2886,11 @@ func (v vxlanRangeValidator) ValidateInt32(
 
 	min := parent.VxlanMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid VXLAN ID range",
-			fmt.Sprintf("vxlan_max (%d) cannot be less than vxlan_min (%d)", max, min),
+			fmt.Sprintf("vxlan_max (%d) must be greater than vxlan_min (%d)", max, min),
 		)
 	}
 }
