@@ -182,11 +182,11 @@ type GreKeyRuleModel struct {
 
 // GTP-U TEID (Tunnel Endpoint ID)
 type GtpuTeidModel struct {
-	Type    types.String `tfsdk:"type"`
-	Pos     types.Int32  `tfsdk:"nested_level_count"`
-	TeidMin types.String `tfsdk:"teid_min"`
-	TeidMax types.String `tfsdk:"teid_max"`
-	Subnet  types.String `tfsdk:"subnet"`
+	Type             types.String `tfsdk:"type"`
+	
+	TeidMin          types.String `tfsdk:"teid_min"`
+	TeidMax          types.String `tfsdk:"teid_max"`
+	Subnet           types.String `tfsdk:"subnet"`
 }
 
 // Host Name
@@ -198,16 +198,16 @@ type HostNameModel struct {
 // IPv6 Flow Label
 type Ipv6FlowLabelModel struct {
 	Type     types.String `tfsdk:"type"`
-	Pos      types.Int32  `tfsdk:"pos"`        // 0..3, default 0
-	LabelMin types.String `tfsdk:"label_min"` // 20-bit flow label as hex string, e.g. 0x1 or FFFFF
-	LabelMax types.String `tfsdk:"label_max"` // optional range max as hex string
-	Subnet   types.String `tfsdk:"subnet"`    // "none", "even", or "odd"
+	Pos      types.Int32  `tfsdk:"nested_level_count"` // 0..3, default 0
+	LabelMin types.String `tfsdk:"label_min"`          // 20-bit flow label as hex string, e.g. 0x1 or FFFFF
+	LabelMax types.String `tfsdk:"label_max"`          // optional range max as hex string
+	Subnet   types.String `tfsdk:"subnet"`             // "none", "even", or "odd"
 }
 
 // IPv6 Next Header
 type Ipv6NextHeaderModel struct {
 	Type      types.String `tfsdk:"type"`
-	Pos       types.Int32  `tfsdk:"pos"`
+	Pos       types.Int32  `tfsdk:"nested_level_count"`
 	HeaderMin types.Int32  `tfsdk:"header_min"`
 	HeaderMax types.Int32  `tfsdk:"header_max"`
 	Subnet    types.String `tfsdk:"subnet"`
@@ -216,7 +216,7 @@ type Ipv6NextHeaderModel struct {
 // MPLS Label
 type MplsLabelModel struct {
 	Type     types.String `tfsdk:"type"`
-	Pos      types.Int32  `tfsdk:"pos"`
+	Pos      types.Int32  `tfsdk:"nested_level_count"`
 	ValueMin types.Int32  `tfsdk:"value_min"`
 	ValueMax types.Int32  `tfsdk:"value_max"`
 	Subnet   types.String `tfsdk:"subnet"`
@@ -227,8 +227,8 @@ type PortDestinationModel struct {
 	Type    types.String `tfsdk:"type"`
 	PortMin types.Int32  `tfsdk:"port_min"`
 	PortMax types.Int32  `tfsdk:"port_max"`
-	Subnet   types.String `tfsdk:"subnet"`
-	Pos      types.Int32  `tfsdk:"pos"`
+	Subnet  types.String `tfsdk:"subnet"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // Port Source (TCP/UDP)
@@ -237,7 +237,7 @@ type PortSourceModel struct {
 	PortMin types.Int32  `tfsdk:"port_min"`
 	PortMax types.Int32  `tfsdk:"port_max"`
 	Subnet  types.String `tfsdk:"subnet"`
-	Pos     types.Int32  `tfsdk:"pos"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // TCP Control Flags
@@ -245,16 +245,16 @@ type TcpControlModel struct {
 	Type  types.String `tfsdk:"type"`
 	Value types.String `tfsdk:"value"`
 	Mask  types.String `tfsdk:"mask"`
-	Pos   types.Int32  `tfsdk:"pos"`
+	Pos   types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // VLAN ID
 type VlanModel struct {
-	Type       types.String `tfsdk:"type"`
-	Pos        types.Int32  `tfsdk:"pos"`
-	VlanMin    types.Int32  `tfsdk:"vlan_min"`
-	VlanMax    types.Int32  `tfsdk:"vlan_max"`
-	Subnet     types.String `tfsdk:"subnet"`
+	Type    types.String `tfsdk:"type"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
+	VlanMin types.Int32  `tfsdk:"vlan_min"`
+	VlanMax types.Int32  `tfsdk:"vlan_max"`
+	Subnet  types.String `tfsdk:"subnet"`
 }
 
 // VN-Tag Destination VIF ID
@@ -263,7 +263,7 @@ type VntagDstVifIdModel struct {
 	VifMin types.Int32  `tfsdk:"vif_min"`
 	VifMax types.Int32  `tfsdk:"vif_max"`
 	Subnet types.String `tfsdk:"subnet"`
-	Pos    types.Int32  `tfsdk:"pos"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // VN-Tag Source VIF ID
@@ -272,7 +272,7 @@ type VntagSrcVifIdModel struct {
 	VifMin types.Int32  `tfsdk:"vif_min"`
 	VifMax types.Int32  `tfsdk:"vif_max"`
 	Subnet types.String `tfsdk:"subnet"`
-	Pos    types.Int32  `tfsdk:"pos"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // VN-Tag VIF List ID
@@ -281,7 +281,7 @@ type VntagVifListIdModel struct {
 	VifMin types.Int32  `tfsdk:"vif_min"`
 	VifMax types.Int32  `tfsdk:"vif_max"`
 	Subnet types.String `tfsdk:"subnet"`
-	Pos    types.Int32  `tfsdk:"pos"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
 }
 
 // VXLAN ID
@@ -343,7 +343,7 @@ type AppProfileConfigRuleModel struct {
 }
 
 type AppRuleModel struct {
-	RuleId           types.Int32                  `tfsdk:"rule_id"`
+	RuleId           types.Int32                `tfsdk:"rule_id"`
 	AppProfileConfig *AppProfileConfigRuleModel `tfsdk:"app_profile_config"`
 }
 
@@ -513,7 +513,6 @@ type GreKeyGo struct {
 
 type GtpuTeidGo struct {
 	Type     string `json:"type"`               // "gtputeId"
-	Pos      int32  `json:"pos"`               // nested level
 	Value    string `json:"value"`              // min TEID (4-byte hex)
 	ValueMax string `json:"valueMax,omitempty"` // max TEID (4-byte hex)
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
@@ -560,7 +559,7 @@ type PortSourceGo struct {
 	Type     string `json:"type"`               // "portSrc"
 	Value    int32  `json:"value"`              // min port
 	ValueMax int32  `json:"valueMax,omitempty"` // max port
-	Pos      int32  `json:"pos"`                // label position (0-3)
+	Pos      int32  `json:"pos"`               // label position (0-3)
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
@@ -573,7 +572,7 @@ type TcpControlGo struct {
 
 type VlanGo struct {
 	Type     string `json:"type"`               // "vlan"
-	Pos      int32  `json:"pos,omitempty"`      // nested level
+	Pos      int32  `json:"pos"`                // nested level
 	Value    int32  `json:"value"`              // min VLAN
 	ValueMax int32  `json:"valueMax,omitempty"` // max VLAN
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
@@ -1810,7 +1809,6 @@ func gtpuTeidSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("gtputeId")},
-			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
 			"teid_min": schema.StringAttribute{
 				Required: true,
 				Validators: []validator.String{
@@ -1944,7 +1942,7 @@ func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6Flow")},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				Optional: true,
 				Computed: true,
 				Default:  int32default.StaticInt32(0),
@@ -2069,7 +2067,7 @@ func ipv6NextHeaderSchema() schema.SingleNestedAttribute {
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
 			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6NextHeader")},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				Optional: true,
 				Computed: true,
 				Default:  int32default.StaticInt32(0),
@@ -2184,15 +2182,14 @@ func mplsLabelSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
-			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
-			"value_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
-			"value_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576), mplsLabelRangeValidator{}}},
-			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
+			"value_min":          schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"value_max":          schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576), mplsLabelRangeValidator{}}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
 		},
 	}
 }
-
 
 type portDestinationSubnetValidator struct{}
 
@@ -2302,11 +2299,11 @@ func (v portSourceRangeValidator) ValidateInt32(
 
 	min := parent.PortMin.ValueInt32()
 	max := req.ConfigValue.ValueInt32()
-	if max < min {
+	if max <= min {
 		resp.Diagnostics.AddAttributeError(
 			req.Path,
 			"Invalid port source range",
-			fmt.Sprintf("port_max (%d) cannot be less than port_min (%d)", max, min),
+			fmt.Sprintf("port_max (%d) must be greater than port_min (%d)", max, min),
 		)
 	}
 }
@@ -2427,11 +2424,11 @@ func portDestinationSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
-			"port_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
-			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portDestinationRangeValidator{}}},
-			"pos":       schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
-			"subnet":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
+			"port_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portDestinationRangeValidator{}}},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},
 		},
 	}
 }
@@ -2441,11 +2438,11 @@ func portSourceSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portSrc")},
-			"port_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
-			"port_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portSourceRangeValidator{}}},
-			"pos":      schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
-			"subnet":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portSourceSubnetValidator{}}},
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portSrc")},
+			"port_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portSourceRangeValidator{}}},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portSourceSubnetValidator{}}},
 		},
 	}
 }
@@ -2479,7 +2476,7 @@ func tcpControlSchema() schema.SingleNestedAttribute {
 					),
 				},
 			},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				MarkdownDescription: "For tunneled/stacked TCP headers, which header to inspect. 0=any, 1=outer, 2=second, 3=third.",
 				Optional:            true,
 				Computed:            true,
@@ -2497,8 +2494,8 @@ func vlanSchema() schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional: true,
 		Attributes: map[string]schema.Attribute{
-			"type":     schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vlan")},
-			"pos":      schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vlan")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
 			"vlan_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 4094)}},
 			"vlan_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 4094), vlanRangeValidator{}}},
 			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), vlanSubnetValidator{}}},
@@ -2534,7 +2531,7 @@ func vntagDstVifIdSchema() schema.SingleNestedAttribute {
 					vntagDstVifIdSubnetValidator{},
 				},
 			},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				Optional: true,
 				Computed: true,
 				Default:  int32default.StaticInt32(0),
@@ -2650,7 +2647,7 @@ func vntagSrcVifIdSchema() schema.SingleNestedAttribute {
 					vntagSrcVifIdSubnetValidator{},
 				},
 			},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				Optional: true,
 				Computed: true,
 				Default:  int32default.StaticInt32(0),
@@ -2766,7 +2763,7 @@ func vntagVifListIdSchema() schema.SingleNestedAttribute {
 					vntagVifListIdSubnetValidator{},
 				},
 			},
-			"pos": schema.Int32Attribute{
+			"nested_level_count": schema.Int32Attribute{
 				Optional: true,
 				Computed: true,
 				Default:  int32default.StaticInt32(0),
@@ -2939,9 +2936,9 @@ func vxlanIdSchema() schema.SingleNestedAttribute {
 			"vxlan_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 16777215)}},
 			"vxlan_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 16777215), vxlanRangeValidator{}}},
 			"subnet": schema.StringAttribute{
-				Optional:  true,
-				Computed:  true,
-				Default:   stringdefault.StaticString("none"),
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
 				Validators: []validator.String{
 					stringvalidator.OneOf("none", "even", "odd"),
 					vxlanSubsetValidator{},
@@ -3458,7 +3455,6 @@ func ModelGtpuTeidToGo(_ context.Context, m *GtpuTeidModel) *GtpuTeidGo {
 
 	g := &GtpuTeidGo{
 		Type:   m.Type.ValueString(),
-		Pos:    m.Pos.ValueInt32(),
 		Value:  m.TeidMin.ValueString(),
 		Subset: subset,
 	}
@@ -4357,6 +4353,36 @@ func anyToInt32(v any, field string) int32 {
 	}
 }
 
+// anyToHexU32String normalizes numeric FM values to 8-digit uppercase hex.
+// FM may return numbers as float64 or strings (hex with/without 0x or decimal).
+func anyToHexU32String(v any, field string) string {
+	switch x := v.(type) {
+	case float64:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int32:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int64:
+		return fmt.Sprintf("%08X", uint32(x))
+	case string:
+		s := strings.TrimSpace(x)
+		s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+		if s == "" {
+			return "00000000"
+		}
+		if n, err := strconv.ParseUint(s, 16, 32); err == nil {
+			return fmt.Sprintf("%08X", uint32(n))
+		}
+		if n, err := strconv.ParseUint(s, 10, 32); err == nil {
+			return fmt.Sprintf("%08X", uint32(n))
+		}
+		panic(fmt.Sprintf("unexpected string format for %s: %q", field, x))
+	default:
+		panic(fmt.Sprintf("unexpected type for %s: %T (%v)", field, v, v))
+	}
+}
+
 func GoEtherTypeToModel(ctx context.Context, ruleElements map[string]any) *EtherTypeModel {
 	data := &EtherTypeModel{
 		Type: types.StringValue("etherType"),
@@ -4728,16 +4754,12 @@ func GoGtpuTeidToModel(ruleElements map[string]any) *GtpuTeidModel {
 		Type:   types.StringValue("gtputeId"),
 		Subnet: types.StringValue("none"),
 	}
-	if v, ok := ruleElements["pos"]; ok {
-		m.Pos = types.Int32Value(anyToInt32(v, "gtpuTeid.pos"))
-	} else {
-		m.Pos = types.Int32Value(0)
-	}
+	
 	if v, ok := ruleElements["value"]; ok {
-		m.TeidMin = types.StringValue(fmt.Sprintf("%08X", anyToInt32(v, "gtpuTeid.value")))
+		m.TeidMin = types.StringValue(anyToHexU32String(v, "gtpuTeid.value"))
 	}
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
-		m.TeidMax = types.StringValue(fmt.Sprintf("%08X", anyToInt32(v, "gtpuTeid.valueMax")))
+		m.TeidMax = types.StringValue(anyToHexU32String(v, "gtpuTeid.valueMax"))
 	}
 	if v, ok := ruleElements["subset"]; ok {
 		if s, ok2 := v.(string); ok2 && s != "" && s != "all" {
@@ -4994,9 +5016,11 @@ func GoVxlanIdToModel(ruleElements map[string]any) *VxlanIdModel {
 	if v, ok := ruleElements["valueMax"]; ok && v != nil {
 		m.VxlanMax = types.Int32Value(int32(v.(float64)))
 	}
-	subset := "all"
-	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "none" {
-		subset = v.(string)
+	subset := "none"
+	if v, ok := ruleElements["subset"]; ok {
+		if s, ok2 := v.(string); ok2 && s != "" && s != "all" {
+			subset = s
+		}
 	}
 	m.VxlanSubset = types.StringValue(subset)
 	return m

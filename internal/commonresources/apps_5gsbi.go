@@ -499,7 +499,8 @@ func (r *App5GSBI) Delete(ctx context.Context, req resource.DeleteRequest, resp 
             EntityType: "application",
             Operation:  "delete",
             Application: map[string]interface{}{
-                "id": rawID,
+                "id":   rawID,
+                "name": app5GSBIName,
             },
         }},
     }
