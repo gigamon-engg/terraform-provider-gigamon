@@ -508,6 +508,13 @@ Each rule may include zero or more of the following match condition blocks. At l
 - `ipv6_next_header` – Match on IPv6 Next Header protocol
 - `mpls_label` – Match on MPLS label value
 - `port_destination` – Match on destination port
+- `port_source` – Match on source transport-layer port
+- `tcp_control` – Match on TCP control/flag bits
+- `vlan` – Match on VLAN ID
+- `vntag_dst_vif_id` – Match on VN-Tag destination VIF ID
+- `vntag_src_vif_id` – Match on VN-Tag source VIF ID
+- `vntag_vif_list_id` – Match on VN-Tag VIF List ID
+- `vxlan_id` – Match on VXLAN ID / VNI
 
 ---
 
@@ -770,7 +777,7 @@ gtp_teid = {
   teid_min           = "00001000"
   teid_max           = "00001FFF"
   nested_level_count = 0
-  subnet             = "all"
+  subnet             = "none"
 }
 ```
 
@@ -816,7 +823,7 @@ ipv6_flow_label = {
   label_min = 256      # decimal; 0x00100 in hex
   label_max = 511      # decimal; 0x001FF in hex
   pos       = 0
-  subnet    = "all"
+  subnet    = "none"
 }
 ```
 
@@ -847,7 +854,7 @@ ipv6_next_header = {
   header_min = 6       # TCP
   header_max = 17      # UDP
   pos        = 0
-  subnet     = "all"
+  subnet     = "none"
 }
 ```
 
@@ -877,7 +884,7 @@ mpls_label = {
   value_min = 100
   value_max = 200
   pos       = 0
-  subnet    = "all"
+  subnet    = "none"
 }
 ```
 
@@ -908,7 +915,7 @@ port_destination = {
   port_min = 8000
   port_max = 8100
   pos      = 0
-  subnet   = "all"
+  subnet   = "none"
 }
 ```
 
@@ -919,11 +926,457 @@ port_destination = {
 
 ---
 
-## Phase 2 Map Conditions: Validation and Version Notes
+### `port_source`
+
+Matches the Layer-4 source port. Use the Terraform block name `port_source`; the FM internal type is `portSrc`.
+
+This block is valid anywhere a rule element is valid, so it can be used in `pass_rules` and `drop_rules` on `gigamon_traffic_map`. On `gigamon_inclusion_map` only `pass_rules` are allowed, and on `gigamon_exclusion_map` only `drop_rules` are allowed. Match conditions in one rule are AND-combined. Separate rules in the same `pass_rules` or `drop_rules` list are OR-combined.
+
+Pair source-port matching with a protocol match such as `ipv4_protocol = { protocol_min = 6 }` for TCP or `ipv4_protocol = { protocol_min = 17 }` for UDP. The provider schema does not force that pairing, but without it FM may match the same numeric field in different transport contexts.
+
+Single-port example:
+
+```hcl
+port_source = {
+  port_min           = 443
+  nested_level_count = 0
+}
+```
+
+Range example:
+
+```hcl
+port_source = {
+  port_min           = 1024
+  port_max           = 49151
+  nested_level_count = 0
+  subnet             = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "port_source" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "port-source-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 10
+    pass_rules = [{
+      rule_id = 1
+      port_source = {
+        port_min           = 1024
+        port_max           = 49151
+        nested_level_count = 0
+        subnet             = "none"
+      }
+      ipv4_protocol = {
+        protocol_min = 6
+      }
+    }]
+  }]
+}
+```
+
+* `port_min` (Number, **Required**) – Lower bound (inclusive), `0` to `65535`.
+* `port_max` (Number, Optional) – Upper bound (inclusive), `0` to `65535`. The provider rejects values below `port_min`, but accepts `port_max == port_min`.
+* `nested_level_count` (Number, Optional, default `0`, range `0–3`) – Which transport header to inspect in stacked or tunneled traffic. `0` means any matching level, `1` outermost, `2` second, `3` third.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `port_max`.
+
+Validation notes:
+
+* Missing `port_min` fails schema validation.
+* `port_min` and `port_max` outside `0..65535` fail validation.
+* `port_max < port_min` fails with an `Invalid port source range` error.
+* `subnet = "even"` or `"odd"` without `port_max` fails with an `Invalid port source subnet` error.
+* `nested_level_count` outside `0..3` fails validation.
+
+---
+
+### `tcp_control`
+
+Matches TCP control bits. Use the Terraform block name `tcp_control`; the FM internal type is `tcpCtl`.
+
+This condition should be paired with a TCP protocol match such as `ipv4_protocol = { protocol_min = 6 }` or `ipv6_next_header = { header_min = 6 }`. The provider exposes `tcp_control` as a standalone rule element, but the field only has protocol meaning for TCP traffic.
+
+```hcl
+resource "gigamon_traffic_map" "tcp_control" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "tcp-control-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 11
+    pass_rules = [{
+      rule_id = 1
+      ipv4_protocol = {
+        protocol_min = 6
+      }
+      tcp_control = {
+        value              = "02"
+        mask               = "3F"
+        nested_level_count = 0
+      }
+    }]
+  }]
+}
+```
+
+* `value` (String, **Required**) – One-byte hexadecimal value, exactly two hex characters, no `0x` prefix. Example: `"02"` for SYN.
+* `mask` (String, Optional) – One-byte hexadecimal mask, exactly two hex characters, no `0x` prefix. Example: `"3F"` to mask the low six TCP flag bits.
+* `nested_level_count` (Number, Optional, default `0`, range `0–3`) – Which TCP header to inspect. `0` means any matching level, `1` outermost, `2` second, `3` third.
+
+Common values:
+
+* `"01"` FIN
+* `"02"` SYN
+* `"04"` RST
+* `"08"` PSH
+* `"10"` ACK
+* `"20"` URG
+
+Validation notes:
+
+* `value` is required.
+* `value` and `mask` must match exactly two hexadecimal characters. `"0x02"` and `"2"` are both invalid.
+* `nested_level_count` outside `0..3` fails validation.
+* Use a protocol condition for TCP so the rule intent is unambiguous and FM evaluates the field in the expected context.
+
+---
+
+### `vlan`
+
+Matches a VLAN ID. Use the Terraform block name `vlan`; the FM internal type is also `vlan`.
+
+The provider-facing field names are `vlan_min`, `vlan_max`, `nested_level_count`, and `subnet`.
+
+Exact VLAN example:
+
+```hcl
+vlan = {
+  vlan_min           = 100
+  nested_level_count = 0
+}
+```
+
+Range example:
+
+```hcl
+vlan = {
+  vlan_min           = 100
+  vlan_max           = 200
+  nested_level_count = 0
+  subnet             = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "vlan" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "vlan-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 12
+    pass_rules = [{
+      rule_id = 1
+      vlan = {
+        vlan_min           = 100
+        vlan_max           = 200
+        nested_level_count = 0
+        subnet             = "none"
+      }
+      ip_version = {
+        ip_version = "v4"
+      }
+    }]
+  }]
+}
+```
+
+* `vlan_min` (Number, **Required**) – Lower bound (inclusive), `1` to `4094`.
+* `vlan_max` (Number, Optional) – Upper bound (inclusive), `1` to `4094`. The provider rejects values below `vlan_min`, but accepts `vlan_max == vlan_min`.
+* `nested_level_count` (Number, Optional, default `0`, range `0–4`) – Which VLAN header to inspect. `0` means any matching VLAN header, `1` outermost, `2` second, `3` third, `4` fourth.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `vlan_max`.
+
+Validation notes:
+
+* VLAN ID `0` is not accepted by this provider schema.
+* Values outside `1..4094` fail validation.
+* `vlan_max < vlan_min` fails with an `Invalid VLAN range` error.
+* `subnet = "even"` or `"odd"` without `vlan_max` fails with an `Invalid VLAN subnet` error.
+
+---
+
+### `vntag_dst_vif_id`
+
+Matches the VN-Tag destination VIF ID. Use the Terraform block name `vntag_dst_vif_id`; the FM internal type is `vntagDvifId`.
+
+Use this condition only for traffic carrying VN-Tag metadata. The provider schema exposes the block on traffic-map rules, but FM-side acceptance still depends on receiving compatible traffic and platform support.
+
+Exact-value example:
+
+```hcl
+vntag_dst_vif_id = {
+  vif_min             = 100
+  nested_level_count  = 0
+}
+```
+
+Range example:
+
+```hcl
+vntag_dst_vif_id = {
+  vif_min             = 100
+  vif_max             = 120
+  nested_level_count  = 0
+  subnet              = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "vntag_destination_vif" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "vntag-destination-vif-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 13
+    pass_rules = [{
+      rule_id = 1
+      vntag_dst_vif_id = {
+        vif_min            = 100
+        vif_max            = 120
+        nested_level_count = 0
+        subnet             = "none"
+      }
+      ip_version = {
+        ip_version = "v4"
+      }
+    }]
+  }]
+}
+```
+
+* `vif_min` (Number, **Required**) – Lower bound (inclusive), `0` to `16384`.
+* `vif_max` (Number, Optional) – Upper bound (inclusive), `0` to `16384`. This provider requires `vif_max > vif_min` when a range is used.
+* `nested_level_count` (Number, Optional, default `0`, range `0–3`) – Which VN-Tag header to inspect. `0` means any matching level.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `vif_max`.
+
+Validation notes:
+
+* Missing `vif_min` fails schema validation.
+* Values outside `0..16384` fail validation.
+* `vif_max <= vif_min` fails with an `Invalid VN-Tag destination VIF range` error.
+* `subnet = "even"` or `"odd"` without `vif_max` fails with an `Invalid VN-Tag destination VIF subnet` error.
+
+---
+
+### `vntag_src_vif_id`
+
+Matches the VN-Tag source VIF ID. Use the Terraform block name `vntag_src_vif_id`; the FM internal type is `vntagSvifId`.
+
+Use this condition only for traffic carrying VN-Tag metadata. The provider schema does not apply an additional map-type or platform validator at plan time.
+
+Exact-value example:
+
+```hcl
+vntag_src_vif_id = {
+  vif_min             = 200
+  nested_level_count  = 0
+}
+```
+
+Range example:
+
+```hcl
+vntag_src_vif_id = {
+  vif_min             = 200
+  vif_max             = 240
+  nested_level_count  = 0
+  subnet              = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "vntag_source_vif" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "vntag-source-vif-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 14
+    pass_rules = [{
+      rule_id = 1
+      vntag_src_vif_id = {
+        vif_min            = 200
+        nested_level_count = 0
+      }
+      ip_version = {
+        ip_version = "v4"
+      }
+    }]
+  }]
+}
+```
+
+* `vif_min` (Number, **Required**) – Lower bound (inclusive), `0` to `4096`.
+* `vif_max` (Number, Optional) – Upper bound (inclusive), `0` to `4096`. This provider requires `vif_max > vif_min` when a range is used.
+* `nested_level_count` (Number, Optional, default `0`, range `0–3`) – Which VN-Tag header to inspect. `0` means any matching level.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `vif_max`.
+
+Validation notes:
+
+* Values outside `0..4096` fail validation.
+* `vif_max <= vif_min` fails with an `Invalid VN-Tag source VIF range` error.
+* `subnet = "even"` or `"odd"` without `vif_max` fails with an `Invalid VN-Tag source VIF subnet` error.
+
+---
+
+### `vntag_vif_list_id`
+
+Matches the VN-Tag VIF List ID. Use the Terraform block name `vntag_vif_list_id`; the FM internal type is `vntagVifListId`.
+
+Use this condition only for traffic carrying VN-Tag metadata. This provider release accepts VIF List ID values from `0` through `16384`.
+
+Exact-value example:
+
+```hcl
+vntag_vif_list_id = {
+  vif_min             = 4096
+  nested_level_count  = 0
+}
+```
+
+Range example:
+
+```hcl
+vntag_vif_list_id = {
+  vif_min             = 4096
+  vif_max             = 4200
+  nested_level_count  = 0
+  subnet              = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "vntag_vif_list" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "vntag-vif-list-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 15
+    pass_rules = [{
+      rule_id = 1
+      vntag_vif_list_id = {
+        vif_min            = 4096
+        nested_level_count = 0
+      }
+      ip_version = {
+        ip_version = "v4"
+      }
+    }]
+  }]
+}
+```
+
+* `vif_min` (Number, **Required**) – Lower bound (inclusive), `0` to `16384`.
+* `vif_max` (Number, Optional) – Upper bound (inclusive), `0` to `16384`. This provider requires `vif_max > vif_min` when a range is used.
+* `nested_level_count` (Number, Optional, default `0`, range `0–3`) – Which VN-Tag header to inspect. `0` means any matching level.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `vif_max`.
+
+Validation notes:
+
+* Values outside `0..16384` fail validation.
+* `vif_max <= vif_min` fails with an `Invalid VN-Tag VIF list range` error.
+* `subnet = "even"` or `"odd"` without `vif_max` fails with an `Invalid VN-Tag VIF list subnet` error.
+
+---
+
+### `vxlan_id`
+
+Matches the VXLAN Network Identifier (VNI). Use the Terraform block name `vxlan_id`; the FM internal type is `vxlanId`.
+
+This provider release does not expose a `pos` or `nested_level_count` field for VXLAN matching. VXLAN matching is therefore configured only by value range and subset. Use this condition only where the packet stream can carry VXLAN encapsulation and the target FM platform supports VXLAN-aware matching.
+
+Exact-value example:
+
+```hcl
+vxlan_id = {
+  vxlan_min = 5000
+}
+```
+
+Range example:
+
+```hcl
+vxlan_id = {
+  vxlan_min = 5000
+  vxlan_max = 5500
+  subnet    = "none"
+}
+```
+
+Complete rule example:
+
+```hcl
+resource "gigamon_traffic_map" "vxlan_id" {
+  monitoring_session_id = gigamon_monitoring_session.ms.id
+  name                  = "vxlan-id-map"
+
+  rule_sets = [{
+    rule_set_id = "1"
+    priority    = 1
+    aep_id      = 16
+    pass_rules = [{
+      rule_id = 1
+      vxlan_id = {
+        vxlan_min = 5000
+        subnet    = "none"
+      }
+      ip_version = {
+        ip_version = "v4"
+      }
+    }]
+  }]
+}
+```
+
+* `vxlan_min` (Number, **Required**) – Lower bound (inclusive), `0` to `16777215`.
+* `vxlan_max` (Number, Optional) – Upper bound (inclusive), `0` to `16777215`. This provider requires `vxlan_max > vxlan_min` when a range is used.
+* `subnet` (String, Optional, default `"none"`) – `"none"`, `"even"`, or `"odd"`. `"even"` and `"odd"` require `vxlan_max`.
+
+Validation notes:
+
+* VXLAN ID `0` is accepted by the provider schema.
+* Values above `16777215` fail validation.
+* `vxlan_max <= vxlan_min` fails with an `Invalid VXLAN ID range` error.
+* `subnet = "even"` or `"odd"` without `vxlan_max` fails with an `Invalid VXLAN ID subset` error.
+
+---
+
+## Additional Condition Notes
 
 ### Terraform Schema Names vs. FM/UI Type Names
 
-The Terraform provider uses user-friendly schema names that differ from the internal FM type identifiers:
+The Terraform provider uses schema names that differ from the FM/UI type identifiers:
 
 | Terraform Block Name | FM Type Name | Description |
 |---|---|---|
@@ -933,32 +1386,35 @@ The Terraform provider uses user-friendly schema names that differ from the inte
 | `ipv6_next_header` | `ipv6NextHeader` | IPv6 Next Header protocol |
 | `mpls_label` | `mplsLabel` | MPLS label value |
 | `port_destination` | `portDst` | Layer-4 destination port |
+| `port_source` | `portSrc` | Layer-4 source port |
+| `tcp_control` | `tcpCtl` | TCP control / flag bits |
+| `vlan` | `vlan` | VLAN ID |
+| `vntag_dst_vif_id` | `vntagDvifId` | VN-Tag destination VIF ID |
+| `vntag_src_vif_id` | `vntagSvifId` | VN-Tag source VIF ID |
+| `vntag_vif_list_id` | `vntagVifListId` | VN-Tag VIF List ID |
+| `vxlan_id` | `vxlanId` | VXLAN ID / VNI |
 
 Users should always use the Terraform block names (left column) in their configurations. The FM type names (right column) are internal representations and should never be used in Terraform code.
 
 ### Range and Subset Behavior
 
-All Phase 2 conditions support optional range matching with `*_max` fields and subset filtering with the `subnet` attribute:
+Most of these conditions expose `*_min` and `*_max` fields plus a `subnet` selector:
 
-- **Single value:** Specify only `*_min` to match a single value.
-- **Range matching:** Specify both `*_min` and `*_max` (inclusive) to match all values in the range.
-- **Subset filtering:** When both `*_min` and `*_max` are set, use `subnet` to restrict matches:
-  - `"none"` (default) – Match all values in [min, max].
-  - `"even"` – Match only even values in [min, max].
-  - `"odd"` – Match only odd values in [min, max].
-  - If `subnet` is set to `"even"` or `"odd"`, `*_max` must be explicitly provided.
+* Single-value form: specify only the required minimum field such as `port_min`, `vlan_min`, `vif_min`, or `vxlan_min`.
+* Range form: specify both min and max fields. All max fields are inclusive.
+* `subnet` values in this provider release are `"none"`, `"even"`, or `"odd"`.
+* `"none"` means no parity filter. The provider does not expose an `"all"` subset keyword for these blocks.
+* `"even"` and `"odd"` require the corresponding max field.
+* `tcp_control` is the exception: it does not expose min/max range fields or `subnet`.
 
-### Position (pos) and Header Depth
+### Position and Header Depth
 
-Conditions supporting `pos` (or `nested_level_count` for GTP-U TEID) allow matching at different header depths in stacked or tunneled traffic:
+This provider uses two position field names:
 
-- `0` (default) – Match any header depth (most common).
-- `1` – Match the outermost/first header.
-- `2` – Match the second header.
-- `3` – Match the third header.
-- `4` (only for MPLS) – Match the fourth header.
+* `nested_level_count` for `gtp_teid`, `port_source`, `tcp_control`, `vlan`, `vntag_dst_vif_id`, `vntag_src_vif_id`, and `vntag_vif_list_id`.
+* `pos` for `ipv6_flow_label`, `ipv6_next_header`, `mpls_label`, and `port_destination`.
 
-For most use cases, the default value of `0` is appropriate. Specify a non-zero position only when dealing with header-stacked traffic (e.g., tunnel-in-tunnel or multiple VLAN/MPLS layers).
+They serve the same purpose: selecting which header instance to inspect in stacked or tunneled traffic. `0` means any matching level. Higher values select deeper headers. VLAN allows `0..4`; most other blocks allow `0..3`. `vxlan_id` does not expose a position field in this provider release.
 
 ### Provider Validation Rules
 
@@ -996,16 +1452,61 @@ The Terraform provider enforces the following validation constraints:
 - `subnet` requires `port_max` when set to `"even"` or `"odd"`.
 - This condition typically matches TCP and UDP ports; pair with `ipv4_protocol` or `ipv6_next_header` to restrict to specific protocols.
 
+**Port Source (`port_source`):**
+- `port_min` must be between 0 and 65,535.
+- If `port_max` is set, it must be between 0 and 65,535 and cannot be less than `port_min`.
+- `subnet` requires `port_max` when set to `"even"` or `"odd"`.
+- Pair this condition with a protocol match so the rule intent is explicit.
+
+**TCP Control (`tcp_control`):**
+- `value` is required and must be exactly two hexadecimal characters.
+- `mask`, when set, must be exactly two hexadecimal characters.
+- `0x` prefixes are rejected by the provider validator.
+- Pair this condition with a TCP protocol match.
+
+**VLAN (`vlan`):**
+- `vlan_min` must be between 1 and 4094.
+- If `vlan_max` is set, it must be between 1 and 4094 and cannot be less than `vlan_min`.
+- `subnet` requires `vlan_max` when set to `"even"` or `"odd"`.
+- VLAN `0` is not accepted by the provider schema.
+
+**VN-Tag Destination VIF ID (`vntag_dst_vif_id`):**
+- `vif_min` must be between 0 and 16,384.
+- If `vif_max` is set, it must be between 0 and 16,384 and must be greater than `vif_min`.
+- `subnet` requires `vif_max` when set to `"even"` or `"odd"`.
+
+**VN-Tag Source VIF ID (`vntag_src_vif_id`):**
+- `vif_min` must be between 0 and 4,096.
+- If `vif_max` is set, it must be between 0 and 4,096 and must be greater than `vif_min`.
+- `subnet` requires `vif_max` when set to `"even"` or `"odd"`.
+
+**VN-Tag VIF List ID (`vntag_vif_list_id`):**
+- `vif_min` must be between 0 and 16,384.
+- If `vif_max` is set, it must be between 0 and 16,384 and must be greater than `vif_min`.
+- `subnet` requires `vif_max` when set to `"even"` or `"odd"`.
+
+**VXLAN ID (`vxlan_id`):**
+- `vxlan_min` must be between 0 and 16,777,215.
+- If `vxlan_max` is set, it must be between 0 and 16,777,215 and must be greater than `vxlan_min`.
+- `subnet` requires `vxlan_max` when set to `"even"` or `"odd"`.
+- No position field is exposed in this provider release.
+
 ### Common Configuration Errors
 
 - **Omitting range values:** If `subnet` is set to `"even"` or `"odd"`, the provider will return an error if `*_max` is not also specified.
 - **Invalid hex formats:** GTP-U TEID values must be exactly 8 hex characters. Leading zeros are required (e.g., `"00000001"`, not `"1"`).
 - **Value bounds:** Out-of-range values (e.g., label > 1,048,575 or port > 65,535) will cause validation errors during `terraform plan`.
+- **TCP control formatting:** `tcp_control.value = "0x02"` and `tcp_control.value = "2"` both fail provider validation because the schema requires exactly two hexadecimal characters with no prefix.
+- **Range semantics differ by block:** `port_source` and `vlan` allow `max == min`, while the VN-Tag and VXLAN blocks require `max > min`.
 - **Mutually exclusive fields:** Do not mix single-value fields (like `teid_min` alone) with range fields in the same block unless explicitly documented as supporting both patterns.
+
+### Provider and FM Applicability Notes
+
+These blocks are documented because this provider release exposes them in the `gigamon_traffic_map` schema and conversion logic. The exact minimum FM version is not encoded in the provider schema, so release-specific FM compatibility still needs to be validated against your target FM build before publication. The provider also does not add plan-time guards for traffic-content prerequisites such as TCP, VXLAN, or VN-Tag presence; those constraints are enforced by the packet stream and by FM at apply time.
 
 ---
 
-## Combined Examples with Phase 2 Conditions
+## Combined Examples
 
 ### Example: IPv6 TCP traffic matching multiple conditions
 
@@ -1047,7 +1548,7 @@ resource "gigamon_traffic_map" "ipv6_tcp_traffic" {
             label_min = 256
             label_max = 512
             pos       = 0
-            subnet    = "all"
+            subnet    = "none"
           }
         }
       ]
@@ -1079,7 +1580,7 @@ resource "gigamon_traffic_map" "gtp_u_filter" {
             teid_min           = "00000100"
             teid_max           = "000001FF"
             nested_level_count = 0
-            subnet             = "all"
+            subnet             = "none"
           }
         }
       ]
@@ -1088,7 +1589,7 @@ resource "gigamon_traffic_map" "gtp_u_filter" {
 }
 
 resource "gigamon_link" "gtp_u_to_tool" {
-  monitoring_session_id = gigamon_traffic_map.gtp_u_filter.id
+  monitoring_session_id = gigamon_monitoring_session.ms.id
 
   source_id     = gigamon_traffic_map.gtp_u_filter.id
   source_aep_id = 15
@@ -1182,7 +1683,7 @@ resource "gigamon_traffic_map" "host_name_routing" {
 resource "gigamon_traffic_map" "multi_condition_map" {
   monitoring_session_id = gigamon_monitoring_session.ms.id
   name                  = "multi-condition-map"
-  description           = "Advanced traffic map with multiple Phase 2 conditions"
+  description           = "Advanced traffic map with multiple match conditions"
 
   rule_sets = [
     {
@@ -1212,7 +1713,7 @@ resource "gigamon_traffic_map" "multi_condition_map" {
             port_min = 5000
             port_max = 6000
             pos      = 0
-            subnet   = "all"
+            subnet   = "none"
           }
         },
 
