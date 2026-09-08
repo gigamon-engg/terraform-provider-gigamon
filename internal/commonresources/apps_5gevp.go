@@ -1,7 +1,18 @@
-// Copyright (c) Gigamon, Inc.
-// Licensed under the Mozilla Public License v. 2.0
-
-// Implements the 5G-EVP Application resource for Gigamon Terraform Provider
+//  Copyright (c) 2017-2026 Gigamon, Inc. All rights reserved.
+//
+//  Author: Gigamon Terraform Team (gigamon-terraform-team@gigamon.com)
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, version 3 of the License.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program. If not, see <https://www.gnu.org/licenses/>
 
 package commonresources
 
@@ -9,11 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"net"
+	"regexp"
+
+	"terraform-provider-gigamon/internal/commonutils"
+	"terraform-provider-gigamon/internal/fmclient"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -23,138 +39,396 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"terraform-provider-gigamon/internal/commonutils"
-	"terraform-provider-gigamon/internal/fmclient"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces
-var _ resource.Resource = &App5GEvp{}
-var _ resource.ResourceWithConfigure = &App5GEvp{}
-var _ resource.ResourceWithImportState = &App5GEvp{}
+// Fixed / non-configurable FM values for the EVP5G app.
+// These are never surfaced as Terraform attributes; the provider always
+// sends these constants to FM regardless of user input.
+const (
+	evp5gAppName        = "evp5g"
+	evp5gPrivateKeyPath = "/usr/lib/vseries-web/api/crypto/private/cloud5g/pvt_key"
+	evp5gCertFilePath   = "/usr/lib/vseries-web/api/crypto/private/cloud5g/cloud5G.crt"
+	evp5gTxDstPort      = 4754 // only supported value
+)
 
-// New5GEvp creates a new resource instance for 5G Cloud application
-func New5GEvp() resource.Resource {
-	return &App5GEvp{}
+// Ensure provider defined types fully satisfy framework interfaces.
+var _ resource.Resource = &Evp5g{}
+
+var _ resource.ResourceWithModifyPlan = &Evp5g{}
+// Evp5g app resource, which manages the EVP5G (Ericsson vTAP / 5G Cloud)
+// application instances deployed on a Monitoring Session.
+func NewEvp5g() resource.Resource {
+	return &Evp5g{}
 }
 
-// App5GEvp manages the 5G Cloud application resource
-type App5GEvp struct {
-	fmClient *fmclient.FmClient
+// Evp5g manages the evp5g app instance on a monitoring session
+type Evp5g struct {
+	fmClient *fmclient.FmClient // Instance to our FM http client instance
 }
 
-// App5GEvpModel represents the Terraform configuration and state for 5G-EVP app
-type App5GEvpModel struct {
-	Id                  types.String `tfsdk:"id"`
+// ---- Nested TF models ----
+
+type Evp5gRxTunnelModel struct {
+	ListenIPAddress types.String `tfsdk:"listen_ip_address"`
+	ListenPort      types.Int32  `tfsdk:"listen_port"`
+	RxThread        types.Int32  `tfsdk:"rx_thread"`
+	Dtls            types.String `tfsdk:"dtls"`
+	DtlsKeyAlias    types.String `tfsdk:"dtls_key_alias"`
+}
+
+type Evp5gTxTunnelModel struct {
+	TxRemoteIPAddress types.String `tfsdk:"tx_remote_ip_address"`
+	TxSrcPort         types.Int32  `tfsdk:"tx_src_port"`
+	TxDstPort         types.Int32  `tfsdk:"tx_dst_port"`
+	TxThread          types.Int32  `tfsdk:"tx_thread"`
+	TxSrcIPAddress    types.List   `tfsdk:"tx_src_ip_address"` // list(string)
+}
+
+type Evp5gTimeServerConfigModel struct {
+	PrimaryServer   types.String `tfsdk:"primary_server"`
+	SecondaryServer types.String `tfsdk:"secondary_server"`
+}
+
+type Evp5gPacketOrderingConfigModel struct {
+	NumEgressFlows             types.Int32  `tfsdk:"num_egress_flows"`
+	EgressFlowTimeoutValue     types.Int32  `tfsdk:"egress_flow_timeout_value"`
+	NumBuckets                 types.Int32  `tfsdk:"num_buckets"`
+	PktsPerBucket              types.Int32  `tfsdk:"pkts_per_bucket"`
+	BucketInterval             types.Int32  `tfsdk:"bucket_interval"`
+	PktRxOutsideBucketInterval types.String `tfsdk:"pkt_rx_outside_bucket_interval"`
+}
+
+type Evp5gDiagnosticOptionsModel struct {
+	PctDisable types.List `tfsdk:"pct_disable"` // list(number), 0-12
+	TxDisable  types.Bool `tfsdk:"tx_disable"`
+}
+
+type Evp5gLoggingModel struct {
+	PacketCaptureLogLevel types.String `tfsdk:"packet_capture_log_level"`
+	CsvLoggingLevel       types.String `tfsdk:"csv_logging_level"`
+	MsgLogLevel           types.String `tfsdk:"msg_log_level"`
+	LogFolderLoc          types.String `tfsdk:"log_folder_loc"`
+}
+
+// Evp5g App Model (top-level TF resource model)
+type Evp5gModel struct {
 	MonitoringSessionId types.String `tfsdk:"monitoring_session_id"`
-	NetworkMode         types.String `tfsdk:"network_mode"`
-	TrafficOptimization types.Object `tfsdk:"traffic_optimization"`
-	PerformanceTuning   types.Object `tfsdk:"performance_tuning"`
+	Alias                types.String `tfsdk:"alias"`
+	Id                   types.String `tfsdk:"id"`
+
+	RxTunnel             *Evp5gRxTunnelModel             `tfsdk:"rx_tunnel"`
+	TxTunnel             *Evp5gTxTunnelModel             `tfsdk:"tx_tunnel"`
+	TimeServerConfig     *Evp5gTimeServerConfigModel     `tfsdk:"time_server_config"`
+	PacketOrderingConfig *Evp5gPacketOrderingConfigModel `tfsdk:"packet_ordering_config"`
+	DiagnosticOptions    *Evp5gDiagnosticOptionsModel    `tfsdk:"diagnostic_options"`
+	Logging              *Evp5gLoggingModel              `tfsdk:"logging"`
 }
 
-type TrafficOptimizationModel struct {
-	Enabled types.Bool  `tfsdk:"enabled"`
-	Level   types.Int32 `tfsdk:"level"`
+// ---- FM payload structs ----
+
+type FMEvp5gRxTunnel struct {
+	ListenIPAddress string `json:"listenIpaddress"`
+	ListenPort      int32  `json:"listenPort,omitempty"`
+	RxThread        int32  `json:"rxThread,omitempty"`
+	Dtls            string `json:"dtls,omitempty"`
+	PrivateKeyPath  string `json:"privateKeyPath"` // fixed, provider-owned
+	CertFilePath    string `json:"certFilePath"`   // fixed, provider-owned
+	DtlsKeyAlias    string `json:"dtlsKeyAlias,omitempty"`
 }
 
-type PerformanceTuningModel struct {
-	CacheSize   types.Int32 `tfsdk:"cache_size"`
-	BufferDepth types.Int32 `tfsdk:"buffer_depth"`
+type FMEvp5gTxTunnel struct {
+	TxRemoteIPAddress string   `json:"txRemoteIpaddress"`
+	TxSrcPort         int32    `json:"txSrcPort,omitempty"`
+	TxDstPort         int32    `json:"txDstPort"`
+	TxThread          int32    `json:"txThread,omitempty"`
+	TxSrcIPAddress    []string `json:"txSrcIpaddress"`
 }
 
-// FM5GEvp represents the wire format for 5G-EVP application in the FM API
-type FM5GEvp struct {
-	AppType   string                 `json:"app_type"`
-	AppConfig map[string]interface{} `json:"app_config"`
+type FMEvp5gTimeServerConfig struct {
+	PrimaryServer   string `json:"primaryServer"`
+	SecondaryServer string `json:"secondaryServer,omitempty"`
 }
 
-// Metadata returns the resource type name
-func (r *App5GEvp) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_app_5gevp"
+type FMEvp5gPacketOrderingConfig struct {
+	NumEgressFlows             int32  `json:"numEgressFlows,omitempty"`
+	EgressFlowTimeoutValue     int32  `json:"egressFlowTimeoutValue,omitempty"`
+	PktOrderingEnable          bool   `json:"pktOrderingEnable"` // always true, provider-owned
+	NumBuckets                 int32  `json:"numBuckets,omitempty"`
+	PktsPerBucket              int32  `json:"pktsPerBucket,omitempty"`
+	BucketInterval             int32  `json:"bucketInterval,omitempty"`
+	PktRxOutSideBucketInterval string `json:"pktRxOutSideBucketInterval,omitempty"`
 }
 
-// Schema defines the resource schema
-func (r *App5GEvp) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+type FMEvp5gDiagnosticOptions struct {
+	PctDisable []int32 `json:"pctDisable,omitempty"`
+	TxDisable  bool    `json:"txDisable"`
+}
+
+type FMEvp5gLogging struct {
+	PacketCaptureLogLevel string `json:"packetCaptureLogLevel,omitempty"`
+	CsvLoggingLevel       string `json:"csvLoggingLevel,omitempty"`
+	MsgLogLevel           string `json:"msgLogLevel,omitempty"`
+	LogFolderLoc          string `json:"logFolderLoc,omitempty"`
+}
+
+// FM payload struct for EVP5G (used in /monitoringSessions/{id}/update)
+type FMEvp5g struct {
+	Alias                string                       `json:"alias,omitempty"`
+	Name                 string                       `json:"name,omitempty"`
+	RxTunnel             *FMEvp5gRxTunnel             `json:"rxTunnel,omitempty"`
+	TxTunnel             *FMEvp5gTxTunnel             `json:"txTunnel,omitempty"`
+	TimeServerConfig     *FMEvp5gTimeServerConfig     `json:"timeServerConfig,omitempty"`
+	PacketOrderingConfig *FMEvp5gPacketOrderingConfig `json:"packetOrderingConfig,omitempty"`
+	DiagnosticOptions    *FMEvp5gDiagnosticOptions    `json:"diagnosticOptions,omitempty"`
+	Logging              *FMEvp5gLogging              `json:"logging,omitempty"`
+	Id                   string                       `json:"id,omitempty"`
+}
+
+// ---- TF Hooks ----
+
+func (e *Evp5g) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_app_evp5g"
+}
+
+func (e *Evp5g) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a 5G-EVP (Enhanced Visibility Platform) application instance on a monitoring session.",
-
+		MarkdownDescription: "Gigamon APP EVP5G (Ericsson vTAP / 5G Cloud) Schema",
 		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Description: "The unique identifier for the 5G-EVP app resource",
-				Computed:    true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
+			"alias": schema.StringAttribute{
+				MarkdownDescription: "Name for this EVP5G application. Only alphanumeric, '-' and '_' are allowed.",
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9_-]+$`),
+						"alias must contain only alphanumeric characters, '-' and '_'",
+					),
 				},
 			},
-
 			"monitoring_session_id": schema.StringAttribute{
-				Description: "The ID of the monitoring session to associate this app with",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.LengthAtLeast(1),
-				},
+				MarkdownDescription: "Monitoring session ID on which to deploy this APP",
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-
-			"network_mode": schema.StringAttribute{
-				Description: "Network mode configuration. Valid values: 'standalone', 'distributed'. Defaults to 'standalone'",
-				Optional:    true,
-				Computed:    true,
-				Default:     stringdefault.StaticString("standalone"),
-				Validators: []validator.String{
-					stringvalidator.OneOf("standalone", "distributed"),
+			"id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "ID of this App instance for later use",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-
-			"traffic_optimization": schema.SingleNestedAttribute{
-				Description: "Traffic optimization settings",
-				Optional:    true,
+		},
+		Blocks: map[string]schema.Block{
+			"rx_tunnel": schema.SingleNestedBlock{
+				MarkdownDescription: "RX tunnel configuration for EVP5G.",
 				Attributes: map[string]schema.Attribute{
-					"enabled": schema.BoolAttribute{
-						Description: "Enable traffic optimization. Defaults to true",
-						Optional:    true,
-						Computed:    true,
-						Default:     booldefault.StaticBool(true),
+					"listen_ip_address": schema.StringAttribute{
+						MarkdownDescription: "IPv4 or IPv6 address to listen on.",
+						Required:            true,
 					},
-
-					"level": schema.Int32Attribute{
-						Description: "Optimization level (1-10). Defaults to 5",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(5),
+					"listen_port": schema.Int32Attribute{
+						MarkdownDescription: "Listening port (1-65535).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(4754),
 						Validators: []validator.Int32{
-							int32validator.Between(1, 10),
+							int32validator.Between(1, 65535),
+						},
+					},
+					"rx_thread": schema.Int32Attribute{
+						MarkdownDescription: "Number of RX threads (1-16).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(8),
+						Validators: []validator.Int32{
+							int32validator.Between(1, 16),
+						},
+					},
+					"dtls": schema.StringAttribute{
+						MarkdownDescription: "Enable or disable DTLS.",
+						Optional:            true,
+						Computed:            true,
+						Default:             stringdefault.StaticString("disable"),
+						Validators: []validator.String{
+							stringvalidator.OneOf("enable", "disable"),
+						},
+					},
+					"dtls_key_alias": schema.StringAttribute{
+						MarkdownDescription: "DTLS key alias.",
+						Optional:            true,
+					},
+					// NOTE: privateKeyPath and certFilePath are fixed FM constants
+					// and are intentionally not exposed as Terraform attributes.
+				},
+			},
+			"tx_tunnel": schema.SingleNestedBlock{
+				MarkdownDescription: "TX tunnel configuration for EVP5G.",
+				Attributes: map[string]schema.Attribute{
+					"tx_remote_ip_address": schema.StringAttribute{
+						MarkdownDescription: "IPv4 or IPv6 remote address for the TX tunnel.",
+						Required:            true,
+					},
+					"tx_src_port": schema.Int32Attribute{
+						MarkdownDescription: "TX source port (1-65535).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(4754),
+						Validators: []validator.Int32{
+							int32validator.Between(1, 65535),
+						},
+					},
+					"tx_dst_port": schema.Int32Attribute{
+						MarkdownDescription: "TX destination port. Only supported value is 4754.",
+						Required:            true,
+						Validators: []validator.Int32{
+							int32validator.OneOf(evp5gTxDstPort),
+						},
+					},
+					"tx_thread": schema.Int32Attribute{
+						MarkdownDescription: "Number of TX threads (1-16).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(4),
+						Validators: []validator.Int32{
+							int32validator.Between(1, 16),
+						},
+					},
+					"tx_src_ip_address": schema.ListAttribute{
+						ElementType:         types.StringType,
+						MarkdownDescription: "List of IPv4 or IPv6 source addresses for the TX tunnel. Maximum 8 entries.",
+						Required:            true,
+						Validators: []validator.List{
+							listvalidator.SizeAtLeast(1),
+							listvalidator.SizeAtMost(8),
 						},
 					},
 				},
 			},
-
-			"performance_tuning": schema.SingleNestedAttribute{
-				Description: "Performance tuning configuration",
-				Optional:    true,
+			"time_server_config": schema.SingleNestedBlock{
+				MarkdownDescription: "Time server (NTP) configuration for EVP5G.",
 				Attributes: map[string]schema.Attribute{
-					"cache_size": schema.Int32Attribute{
-						Description: "Cache size in MB (64-1024). Defaults to 256",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(256),
+					"primary_server": schema.StringAttribute{
+						MarkdownDescription: "IPv4 or IPv6 address of the primary time server.",
+						Required:            true,
+					},
+					"secondary_server": schema.StringAttribute{
+						MarkdownDescription: "IPv4 or IPv6 address of the secondary time server.",
+						Optional:            true,
+					},
+				},
+			},
+			"packet_ordering_config": schema.SingleNestedBlock{
+				MarkdownDescription: "Packet ordering configuration for EVP5G.",
+				Attributes: map[string]schema.Attribute{
+					"num_egress_flows": schema.Int32Attribute{
+						MarkdownDescription: "Number of egress flows (32-16384).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(512),
 						Validators: []validator.Int32{
-							int32validator.Between(64, 1024),
+							int32validator.Between(32, 16384),
 						},
 					},
-
-					"buffer_depth": schema.Int32Attribute{
-						Description: "Buffer depth in packets (100-10000). Defaults to 1000",
-						Optional:    true,
-						Computed:    true,
-						Default:     int32default.StaticInt32(1000),
+					"egress_flow_timeout_value": schema.Int32Attribute{
+						MarkdownDescription: "Egress flow timeout value in seconds (360-1860).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(660),
 						Validators: []validator.Int32{
-							int32validator.Between(100, 10000),
+							int32validator.Between(360, 1860),
 						},
+					},
+					"num_buckets": schema.Int32Attribute{
+						MarkdownDescription: "Number of buckets (10-200).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(50),
+						Validators: []validator.Int32{
+							int32validator.Between(10, 200),
+						},
+					},
+					"pkts_per_bucket": schema.Int32Attribute{
+						MarkdownDescription: "Packets per bucket (10000-100000).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(20000),
+						Validators: []validator.Int32{
+							int32validator.Between(10000, 100000),
+						},
+					},
+					"bucket_interval": schema.Int32Attribute{
+						MarkdownDescription: "Bucket interval in seconds (1-5).",
+						Optional:            true,
+						Computed:            true,
+						Default:             int32default.StaticInt32(1),
+						Validators: []validator.Int32{
+							int32validator.Between(1, 5),
+						},
+					},
+					"pkt_rx_outside_bucket_interval": schema.StringAttribute{
+						MarkdownDescription: "Action for packets received outside the bucket interval: forward or discard.",
+						Optional:            true,
+						Computed:            true,
+						Default:             stringdefault.StaticString("forward"),
+						Validators: []validator.String{
+							stringvalidator.OneOf("forward", "discard"),
+						},
+					},
+					// NOTE: pktOrderingEnable is a fixed FM constant (always true)
+					// and is intentionally not exposed as a Terraform attribute.
+				},
+			},
+			"diagnostic_options": schema.SingleNestedBlock{
+				MarkdownDescription: "Diagnostic options for EVP5G.",
+				Attributes: map[string]schema.Attribute{
+					"pct_disable": schema.ListAttribute{
+						ElementType:         types.Int32Type,
+						MarkdownDescription: "List of PCT indices to disable (each 0-12).",
+						Optional:            true,
+						Validators: []validator.List{
+							listvalidator.ValueInt32sAre(int32validator.Between(0, 12)),
+						},
+					},
+					"tx_disable": schema.BoolAttribute{
+						MarkdownDescription: "Disable TX.",
+						Optional:            true,
+						Computed:            true,
+						Default:             booldefault.StaticBool(false),
+					},
+				},
+			},
+			"logging": schema.SingleNestedBlock{
+				MarkdownDescription: "Logging configuration for EVP5G.",
+				Attributes: map[string]schema.Attribute{
+					"packet_capture_log_level": schema.StringAttribute{
+						MarkdownDescription: "Packet capture log level.",
+						Optional:            true,
+						Validators: []validator.String{
+							stringvalidator.OneOf("all", "receive", "transmit", "none"),
+						},
+					},
+					"csv_logging_level": schema.StringAttribute{
+						MarkdownDescription: "Enable or disable CSV logging.",
+						Optional:            true,
+						Validators: []validator.String{
+							stringvalidator.OneOf("enable", "disable"),
+						},
+					},
+					"msg_log_level": schema.StringAttribute{
+						MarkdownDescription: "Message log level.",
+						Optional:            true,
+						Validators: []validator.String{
+							stringvalidator.OneOf("none", "fatal", "error", "info", "detail", "full-parse"),
+						},
+					},
+					"log_folder_loc": schema.StringAttribute{
+						MarkdownDescription: "Folder path where logs will be stored.",
+						Optional:            true,
+						Computed:            true,
+						Default:             stringdefault.StaticString("/var/log"),
 					},
 				},
 			},
@@ -162,375 +436,423 @@ func (r *App5GEvp) Schema(ctx context.Context, req resource.SchemaRequest, resp 
 	}
 }
 
-// Configure configures the resource with provider client
-func (r *App5GEvp) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (e *Evp5g) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroying
+	}
+	var data Evp5gModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	validateEvp5gIPs(ctx, &data, resp)
+}
+
+func validateEvp5gIPs(ctx context.Context, data *Evp5gModel, resp *resource.ModifyPlanResponse) {
+	if data.RxTunnel != nil {
+		if ip := data.RxTunnel.ListenIPAddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				// path reference is approximate for block attributes
+				evp5gPath("rx_tunnel", "listen_ip_address"),
+				"Invalid listen_ip_address",
+				fmt.Sprintf("rx_tunnel.listen_ip_address %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+	}
+
+	if data.TxTunnel != nil {
+		if ip := data.TxTunnel.TxRemoteIPAddress.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("tx_tunnel", "tx_remote_ip_address"),
+				"Invalid tx_remote_ip_address",
+				fmt.Sprintf("tx_tunnel.tx_remote_ip_address %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+
+		if !data.TxTunnel.TxSrcIPAddress.IsNull() && !data.TxTunnel.TxSrcIPAddress.IsUnknown() {
+			var srcIPs []string
+			_ = data.TxTunnel.TxSrcIPAddress.ElementsAs(ctx, &srcIPs, false)
+			for i, ip := range srcIPs {
+				if ip != "" && net.ParseIP(ip) == nil {
+					resp.Diagnostics.AddAttributeError(
+						evp5gPath("tx_tunnel", "tx_src_ip_address"),
+						"Invalid tx_src_ip_address",
+						fmt.Sprintf("tx_tunnel.tx_src_ip_address[%d] %q must be a valid IPv4 or IPv6 address", i, ip),
+					)
+				}
+			}
+		}
+	}
+
+	if data.TimeServerConfig != nil {
+		if ip := data.TimeServerConfig.PrimaryServer.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("time_server_config", "primary_server"),
+				"Invalid primary_server",
+				fmt.Sprintf("time_server_config.primary_server %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+		if ip := data.TimeServerConfig.SecondaryServer.ValueString(); ip != "" && net.ParseIP(ip) == nil {
+			resp.Diagnostics.AddAttributeError(
+				evp5gPath("time_server_config", "secondary_server"),
+				"Invalid secondary_server",
+				fmt.Sprintf("time_server_config.secondary_server %q must be a valid IPv4 or IPv6 address", ip),
+			)
+		}
+	}
+}
+
+// evp5gPath builds a simple attribute path for a nested block field.
+// The framework path API requires matching the schema structure; for blocks
+// we use AtName on both the block and the attribute within it.
+func evp5gPath(block, attr string) path.Path {
+	return path.Root(block).AtName(attr)
+}
+
+// Initial Configure call, to initialize the Provider
+func (e *Evp5g) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
-
-	client, ok := req.ProviderData.(*fmclient.FmClient)
+	fmClient, ok := req.ProviderData.(*fmclient.FmClient)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *fmclient.FmClient, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected *fmclient.FmClient, got: %T. Report the issue to Gigamon", req.ProviderData),
 		)
 		return
 	}
-
-	r.fmClient = client
+	e.fmClient = fmClient
 }
 
-// Create creates the 5G Cloud app resource
-func (r *App5GEvp) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	tflog.Info(ctx, "Creating 5G Cloud app resource")
+// Create a FM DS from the TF DS and return the same
+func (e *Evp5g) createFMStruct(ctx context.Context, data *Evp5gModel) *FMEvp5g {
+	fm := &FMEvp5g{
+		Alias: data.Alias.ValueString(),
+		Name:  evp5gAppName,
+		Id:    data.Id.ValueString(),
+	}
 
-	// Extract the configuration from the plan
-	var data App5GEvpModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if data.RxTunnel != nil {
+		fm.RxTunnel = &FMEvp5gRxTunnel{
+			ListenIPAddress: data.RxTunnel.ListenIPAddress.ValueString(),
+			ListenPort:      data.RxTunnel.ListenPort.ValueInt32(),
+			RxThread:        data.RxTunnel.RxThread.ValueInt32(),
+			Dtls:            data.RxTunnel.Dtls.ValueString(),
+			PrivateKeyPath:  evp5gPrivateKeyPath,
+			CertFilePath:    evp5gCertFilePath,
+			DtlsKeyAlias:    data.RxTunnel.DtlsKeyAlias.ValueString(),
+		}
+	}
+
+	if data.TxTunnel != nil {
+		var srcIPs []string
+		if !data.TxTunnel.TxSrcIPAddress.IsNull() && !data.TxTunnel.TxSrcIPAddress.IsUnknown() {
+			var ss []types.String
+			_ = data.TxTunnel.TxSrcIPAddress.ElementsAs(ctx, &ss, false)
+			for _, s := range ss {
+				srcIPs = append(srcIPs, s.ValueString())
+			}
+		}
+		fm.TxTunnel = &FMEvp5gTxTunnel{
+			TxRemoteIPAddress: data.TxTunnel.TxRemoteIPAddress.ValueString(),
+			TxSrcPort:         data.TxTunnel.TxSrcPort.ValueInt32(),
+			TxDstPort:         evp5gTxDstPort, // only supported value
+			TxThread:          data.TxTunnel.TxThread.ValueInt32(),
+			TxSrcIPAddress:    srcIPs,
+		}
+	}
+
+	if data.TimeServerConfig != nil {
+		fm.TimeServerConfig = &FMEvp5gTimeServerConfig{
+			PrimaryServer:   data.TimeServerConfig.PrimaryServer.ValueString(),
+			SecondaryServer: data.TimeServerConfig.SecondaryServer.ValueString(),
+		}
+	}
+
+	if data.PacketOrderingConfig != nil {
+		fm.PacketOrderingConfig = &FMEvp5gPacketOrderingConfig{
+			NumEgressFlows:             data.PacketOrderingConfig.NumEgressFlows.ValueInt32(),
+			EgressFlowTimeoutValue:     data.PacketOrderingConfig.EgressFlowTimeoutValue.ValueInt32(),
+			PktOrderingEnable:          true, // fixed, always true
+			NumBuckets:                 data.PacketOrderingConfig.NumBuckets.ValueInt32(),
+			PktsPerBucket:              data.PacketOrderingConfig.PktsPerBucket.ValueInt32(),
+			BucketInterval:             data.PacketOrderingConfig.BucketInterval.ValueInt32(),
+			PktRxOutSideBucketInterval: data.PacketOrderingConfig.PktRxOutsideBucketInterval.ValueString(),
+		}
+	}
+
+	if data.DiagnosticOptions != nil {
+		var pct []int32
+		if !data.DiagnosticOptions.PctDisable.IsNull() && !data.DiagnosticOptions.PctDisable.IsUnknown() {
+			var vv []types.Int32
+			_ = data.DiagnosticOptions.PctDisable.ElementsAs(ctx, &vv, false)
+			for _, v := range vv {
+				pct = append(pct, v.ValueInt32())
+			}
+		}
+		fm.DiagnosticOptions = &FMEvp5gDiagnosticOptions{
+			PctDisable: pct,
+			TxDisable:  data.DiagnosticOptions.TxDisable.ValueBool(),
+		}
+	}
+
+	if data.Logging != nil {
+		fm.Logging = &FMEvp5gLogging{
+			PacketCaptureLogLevel: data.Logging.PacketCaptureLogLevel.ValueString(),
+			CsvLoggingLevel:       data.Logging.CsvLoggingLevel.ValueString(),
+			MsgLogLevel:           data.Logging.MsgLogLevel.ValueString(),
+			LogFolderLoc:          data.Logging.LogFolderLoc.ValueString(),
+		}
+	}
+
+	return fm
+}
+
+// Update the TF Data from the FM struct
+func (e *Evp5g) updateTFStruct(ctx context.Context, data *Evp5gModel, fmData *FMEvp5g) {
+	if fmData.Alias != "" {
+		data.Alias = types.StringValue(fmData.Alias)
+	}
+
+	if fmData.RxTunnel != nil {
+		data.RxTunnel = &Evp5gRxTunnelModel{
+			ListenIPAddress: types.StringValue(fmData.RxTunnel.ListenIPAddress),
+			ListenPort:      types.Int32Value(fmData.RxTunnel.ListenPort),
+			RxThread:        types.Int32Value(fmData.RxTunnel.RxThread),
+			Dtls:            types.StringValue(fmData.RxTunnel.Dtls),
+			DtlsKeyAlias:    stringOrNull(fmData.RxTunnel.DtlsKeyAlias),
+		}
+	}
+
+	if fmData.TxTunnel != nil {
+		var srcIPs types.List
+		if len(fmData.TxTunnel.TxSrcIPAddress) == 0 {
+			srcIPs = types.ListNull(types.StringType)
+		} else {
+			srcIPs, _ = types.ListValueFrom(ctx, types.StringType, fmData.TxTunnel.TxSrcIPAddress)
+		}
+		data.TxTunnel = &Evp5gTxTunnelModel{
+			TxRemoteIPAddress: types.StringValue(fmData.TxTunnel.TxRemoteIPAddress),
+			TxSrcPort:         types.Int32Value(fmData.TxTunnel.TxSrcPort),
+			TxDstPort:         types.Int32Value(fmData.TxTunnel.TxDstPort),
+			TxThread:          types.Int32Value(fmData.TxTunnel.TxThread),
+			TxSrcIPAddress:    srcIPs,
+		}
+	}
+
+	if fmData.TimeServerConfig != nil {
+		data.TimeServerConfig = &Evp5gTimeServerConfigModel{
+			PrimaryServer:   types.StringValue(fmData.TimeServerConfig.PrimaryServer),
+			SecondaryServer: stringOrNull(fmData.TimeServerConfig.SecondaryServer),
+		}
+	}
+
+	if fmData.PacketOrderingConfig != nil {
+		data.PacketOrderingConfig = &Evp5gPacketOrderingConfigModel{
+			NumEgressFlows:             types.Int32Value(fmData.PacketOrderingConfig.NumEgressFlows),
+			EgressFlowTimeoutValue:     types.Int32Value(fmData.PacketOrderingConfig.EgressFlowTimeoutValue),
+			NumBuckets:                 types.Int32Value(fmData.PacketOrderingConfig.NumBuckets),
+			PktsPerBucket:              types.Int32Value(fmData.PacketOrderingConfig.PktsPerBucket),
+			BucketInterval:             types.Int32Value(fmData.PacketOrderingConfig.BucketInterval),
+			PktRxOutsideBucketInterval: types.StringValue(fmData.PacketOrderingConfig.PktRxOutSideBucketInterval),
+		}
+	}
+
+	if fmData.DiagnosticOptions != nil {
+		var pct types.List
+		if len(fmData.DiagnosticOptions.PctDisable) == 0 {
+			pct = types.ListNull(types.Int32Type)
+		} else {
+			pct, _ = types.ListValueFrom(ctx, types.Int32Type, fmData.DiagnosticOptions.PctDisable)
+		}
+		data.DiagnosticOptions = &Evp5gDiagnosticOptionsModel{
+			PctDisable: pct,
+			TxDisable:  types.BoolValue(fmData.DiagnosticOptions.TxDisable),
+		}
+	}
+
+	if fmData.Logging != nil {
+		data.Logging = &Evp5gLoggingModel{
+			PacketCaptureLogLevel: stringOrNull(fmData.Logging.PacketCaptureLogLevel),
+			CsvLoggingLevel:       stringOrNull(fmData.Logging.CsvLoggingLevel),
+			MsgLogLevel:           stringOrNull(fmData.Logging.MsgLogLevel),
+			LogFolderLoc:          types.StringValue(fmData.Logging.LogFolderLoc),
+		}
+	}
+}
+
+// Create call for new EVP5G App Instance
+func (e *Evp5g) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data Evp5gModel
+	// Read Terraform plan data into the model
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Build the FM API payload from the Terraform model
-	fmPayload := buildFM5GEvpPayload(ctx, data)
-
-	// Create update request for monitoring session
+	fmData := e.createFMStruct(ctx, &data)
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{{
-			EntityType:  "application",
-			Operation:   "create",
-			Application: fmPayload,
-		}},
+		Requests: []commonutils.UpdateObject{
+			{
+				EntityType:  "application",
+				Operation:   "create",
+				Application: fmData,
+			},
+		},
 	}
 
-	// Call the FM API to create the app
-	sessionID := data.MonitoringSessionId.ValueString()
-	id, err := commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
+	id, err := commonutils.UpdateMonSess(
+		ctx,
+		&updateReq,
+		data.MonitoringSessionId.ValueString(),
+		e.fmClient,
+	)
 	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Failed to create 5G Cloud app: %v", err))
 		resp.Diagnostics.AddError(
-			"Error creating 5G Cloud app",
-			fmt.Sprintf("Could not create app on session %s: %s", sessionID, err.Error()),
+			"Unable to create evp5g app",
+			fmt.Sprintf("app creation failed: %s", err),
 		)
 		return
 	}
 
-	// Create typed ID
-	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.Type5GEvp, id)
+	typedID, err := commonutils.MakeTypedID(
+		commonutils.ModuleApp,
+		commonutils.Type5GEvp, // NOTE: add TypeEvp5g to commonutils alongside TypeDedup/TypeSlicing/etc.
+		id,
+	)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
 		return
 	}
 
-	// Fetch the created resource to get full state
-	fmData := FM5GEvp{}
-	err = GetMSAppData(ctx, sessionID, id, "5GEvp", "", &fmData, r.fmClient)
-	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Failed to read created 5G Cloud app: %v", err))
-		resp.Diagnostics.AddError("Error reading created app", err.Error())
-		return
-	}
-
-	// Map to state
-	stateData := mapFM5GEvpToState(ctx, fmData, sessionID, typedID)
-
-	// Save the state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &stateData)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Successfully created 5G Cloud app: %s", stateData.Id.ValueString()))
+	data.Id = types.StringValue(typedID)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Read reads the 5G Cloud app resource from the FM API
-func (r *App5GEvp) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	tflog.Info(ctx, "Reading 5G Cloud app resource")
-
-	// Get the current state from Terraform
-	var data App5GEvpModel
+func (e *Evp5g) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data Evp5gModel
+	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Extract UUID from typed ID
+	evp5gData := FMEvp5g{}
 	rawID, err := commonutils.UUIDFromTypedID(data.Id.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error parsing ID", err.Error())
 		return
 	}
 
-	// Fetch the app data from FM API
-	sessionID := data.MonitoringSessionId.ValueString()
-	fmData := FM5GEvp{}
-	err = GetMSAppData(ctx, sessionID, rawID, "5GEvp", "", &fmData, r.fmClient)
+	err = GetMSAppData(
+		ctx,
+		data.MonitoringSessionId.ValueString(),
+		rawID,
+		evp5gAppName,
+		"",
+		&evp5gData,
+		e.fmClient,
+	)
 	if err != nil {
 		var fmErr *fmclient.FMErrors
-		if errors.As(err, &fmErr) && fmErr.ErrorCode() == fmclient.ObjectNotFound {
-			// Resource no longer exists
-			resp.State.RemoveResource(ctx)
-			return
+		if errors.As(err, &fmErr) {
+			if fmErr.ErrorCode() == fmclient.ObjectNotFound {
+				tflog.Info(ctx, "evp5g app not found, removing from state", nil)
+				resp.State.RemoveResource(ctx)
+				return
+			}
 		}
-		tflog.Error(ctx, fmt.Sprintf("Failed to read 5G Cloud app: %v", err))
 		resp.Diagnostics.AddError(
-			"Error reading 5G Cloud app",
-			fmt.Sprintf("Could not read app from session %s: %s", sessionID, err.Error()),
+			"Unable to Get EVP5G App details",
+			fmt.Sprintf("unable to get EVP5G App details. error is %v", err),
 		)
 		return
 	}
 
-	// Map the FM response back to the Terraform state model
-	stateData := mapFM5GEvpToState(ctx, fmData, sessionID, data.Id.ValueString())
-
-	// Save the refreshed state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &stateData)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Successfully read 5G Cloud app: %s", stateData.Id.ValueString()))
+	// Save updated data into Terraform state
+	e.updateTFStruct(ctx, &data, &evp5gData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Update updates the 5G Cloud app resource
-func (r *App5GEvp) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	tflog.Info(ctx, "Updating 5G Cloud app resource")
-
-	// Get the plan (desired state)
-	var planData App5GEvpModel
+func (e *Evp5g) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var planData Evp5gModel
+	// Read desired values from the plan
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &planData)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Extract UUID from typed ID
+	fmData := e.createFMStruct(ctx, &planData)
 	rawID, err := commonutils.UUIDFromTypedID(planData.Id.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error parsing ID", err.Error())
 		return
 	}
+	fmData.Id = rawID
 
-	// Build the FM API update payload
-	fmPayload := buildFM5GEvpPayload(ctx, planData)
-	fmPayload["id"] = rawID
-
-	// Create update request for monitoring session
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{{
-			EntityType:  "application",
-			Operation:   "update",
-			Application: fmPayload,
-		}},
+		Requests: []commonutils.UpdateObject{
+			{
+				EntityType:  "application",
+				Operation:   "update",
+				Application: fmData,
+			},
+		},
 	}
 
-	// Call the FM API to update the app
-	sessionID := planData.MonitoringSessionId.ValueString()
-	_, err = commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
+	_, err = commonutils.UpdateMonSess(
+		ctx,
+		&updateReq,
+		planData.MonitoringSessionId.ValueString(),
+		e.fmClient,
+	)
 	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Failed to update 5G Cloud app: %v", err))
 		resp.Diagnostics.AddError(
-			"Error updating 5G Cloud app",
-			fmt.Sprintf("Could not update app on session %s: %s", sessionID, err.Error()),
+			"Unable to update evp5g app",
+			fmt.Sprintf("app update failed: %s", err),
 		)
 		return
 	}
 
-	// Fetch the updated resource to get full state
-	fmData := FM5GEvp{}
-	err = GetMSAppData(ctx, sessionID, rawID, "5GEvp", "", &fmData, r.fmClient)
-	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Failed to read updated 5G Cloud app: %v", err))
-		resp.Diagnostics.AddError("Error reading updated app", err.Error())
-		return
-	}
-
-	// Map to state
-	stateData := mapFM5GEvpToState(ctx, fmData, sessionID, planData.Id.ValueString())
-
-	// Save the updated state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &stateData)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Successfully updated 5G Cloud app: %s", stateData.Id.ValueString()))
+	// Let FM override computed/FM-owned fields
+	e.updateTFStruct(ctx, &planData, fmData)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &planData)...)
 }
 
-// Delete deletes the 5G Cloud app resource
-func (r *App5GEvp) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	tflog.Info(ctx, "Deleting 5G Cloud app resource")
-
-	// Get the current state to extract the session ID and resource ID
-	var data App5GEvpModel
+func (e *Evp5g) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data Evp5gModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Extract UUID from typed ID
 	rawID, err := commonutils.UUIDFromTypedID(data.Id.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error parsing ID", err.Error())
 		return
 	}
 
-	// Create delete request for monitoring session
 	updateReq := commonutils.UpdateReq{
-		Requests: []commonutils.UpdateObject{{
-			EntityType: "application",
-			Operation:  "delete",
-			Application: map[string]interface{}{
-				"id":       rawID,
-				"app_type": "5GEvp",
+		Requests: []commonutils.UpdateObject{
+			{
+				EntityType: "application",
+				Operation:  "delete",
+				Application: FMEvp5g{
+					Id:   rawID,
+					Name: "Application",
+				},
 			},
-		}},
+		},
 	}
 
-	// Call the FM API to delete the app
-	sessionID := data.MonitoringSessionId.ValueString()
-	_, err = commonutils.UpdateMonSess(ctx, &updateReq, sessionID, r.fmClient)
-	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Failed to delete 5G Cloud app: %v", err))
-		resp.Diagnostics.AddError(
-			"Error deleting 5G Cloud app",
-			fmt.Sprintf("Could not delete app from session %s: %s", sessionID, err.Error()),
-		)
-		return
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Successfully deleted 5G Cloud app from session %s", sessionID))
-}
-
-// ImportState implements the import functionality for 5G Cloud app
-func (r *App5GEvp) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	tflog.Info(ctx, fmt.Sprintf("Importing 5G Cloud app resource: %s", req.ID))
-
-	// The import ID format is: <sessionID>::<resourceID>
-	parts := strings.Split(req.ID, "::")
-	if len(parts) != 2 {
-		resp.Diagnostics.AddError(
-			"Invalid import ID format",
-			fmt.Sprintf("Expected format: <sessionID>::<resourceID>, got: %s", req.ID),
-		)
-		return
-	}
-
-	sessionID := parts[0]
-	rawID := parts[1]
-
-	// Create typed ID
-	typedID, err := commonutils.MakeTypedID(commonutils.ModuleApp, commonutils.Type5GEvp, rawID)
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating typed ID", err.Error())
-		return
-	}
-
-	// Fetch the app data from FM
-	fmData := FM5GEvp{}
-	err = GetMSAppData(ctx, sessionID, rawID, "5GEvp", "", &fmData, r.fmClient)
+	_, err = commonutils.UpdateMonSess(
+		ctx,
+		&updateReq,
+		data.MonitoringSessionId.ValueString(),
+		e.fmClient,
+	)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Error importing 5G Cloud app",
-			fmt.Sprintf("Could not read app from session %s: %s", sessionID, err.Error()),
+			"Unable to delete evp5g app",
+			fmt.Sprintf("app deletion failed: %s", err),
 		)
-		return
 	}
-
-	// Map to state
-	stateData := mapFM5GEvpToState(ctx, fmData, sessionID, typedID)
-
-	// Save state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &stateData)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Successfully imported 5G Cloud app: %s", stateData.Id.ValueString()))
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// buildFM5GEvpPayload converts the Terraform model to FM API payload format
-func buildFM5GEvpPayload(ctx context.Context, model App5GEvpModel) map[string]interface{} {
-	appConfig := map[string]interface{}{
-		"network_mode": model.NetworkMode.ValueString(),
-	}
-
-	if !model.TrafficOptimization.IsNull() && !model.TrafficOptimization.IsUnknown() {
-		var toModel TrafficOptimizationModel
-		_ = model.TrafficOptimization.As(ctx, &toModel, basetypes.ObjectAsOptions{})
-		appConfig["traffic_optimization"] = map[string]interface{}{
-			"enabled": toModel.Enabled.ValueBool(),
-			"level":   toModel.Level.ValueInt32(),
-		}
-	}
-
-	if !model.PerformanceTuning.IsNull() && !model.PerformanceTuning.IsUnknown() {
-		var ptModel PerformanceTuningModel
-		_ = model.PerformanceTuning.As(ctx, &ptModel, basetypes.ObjectAsOptions{})
-		appConfig["performance_tuning"] = map[string]interface{}{
-			"cache_size":   ptModel.CacheSize.ValueInt32(),
-			"buffer_depth": ptModel.BufferDepth.ValueInt32(),
-		}
-	}
-
-	return map[string]interface{}{
-		"app_type":   "5G-EVP",
-		"app_config": appConfig,
-	}
-}
-
-// mapFM5GEvpToState converts FM API response to Terraform model
-func mapFM5GEvpToState(ctx context.Context, fmData FM5GEvp, sessionID string, typedID string) App5GEvpModel {
-	model := App5GEvpModel{
-		Id:                  types.StringValue(typedID),
-		MonitoringSessionId: types.StringValue(sessionID),
-		NetworkMode:         types.StringValue("standalone"),
-	}
-
-	if fmData.AppConfig != nil {
-		if networkMode, ok := fmData.AppConfig["network_mode"].(string); ok {
-			model.NetworkMode = types.StringValue(networkMode)
-		}
-
-		if toCfg, ok := fmData.AppConfig["traffic_optimization"].(map[string]interface{}); ok {
-			toModel := TrafficOptimizationModel{
-				Enabled: types.BoolValue(true),
-				Level:   types.Int32Value(5),
-			}
-			if enabled, ok := toCfg["enabled"].(bool); ok {
-				toModel.Enabled = types.BoolValue(enabled)
-			}
-			if level, ok := toCfg["level"].(float64); ok {
-				toModel.Level = types.Int32Value(int32(level))
-			}
-			toObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"enabled": types.BoolType,
-				"level":   types.Int32Type,
-			}, toModel)
-			model.TrafficOptimization = toObj
-		}
-
-		if ptCfg, ok := fmData.AppConfig["performance_tuning"].(map[string]interface{}); ok {
-			ptModel := PerformanceTuningModel{
-				CacheSize:   types.Int32Value(256),
-				BufferDepth: types.Int32Value(1000),
-			}
-			if cacheSize, ok := ptCfg["cache_size"].(float64); ok {
-				ptModel.CacheSize = types.Int32Value(int32(cacheSize))
-			}
-			if bufDepth, ok := ptCfg["buffer_depth"].(float64); ok {
-				ptModel.BufferDepth = types.Int32Value(int32(bufDepth))
-			}
-			ptObj, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
-				"cache_size":   types.Int32Type,
-				"buffer_depth": types.Int32Type,
-			}, ptModel)
-			model.PerformanceTuning = ptObj
-		}
-	}
-
-	return model
 }
