@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -177,6 +178,120 @@ type GreKeyRuleModel struct {
 	GreKeySubset types.String `tfsdk:"gre_key_subset"`
 }
 
+// ===== Phase 2 Map Conditions (13 new types) =====
+
+// GTP-U TEID (Tunnel Endpoint ID)
+type GtpuTeidModel struct {
+	Type             types.String `tfsdk:"type"`
+	
+	TeidMin          types.String `tfsdk:"teid_min"`
+	TeidMax          types.String `tfsdk:"teid_max"`
+	Subnet           types.String `tfsdk:"subnet"`
+}
+
+// Host Name
+type HostNameModel struct {
+	Type       types.String `tfsdk:"type"`
+	SrcHostPrefix types.String `tfsdk:"src_host_prefix"`
+}
+
+// IPv6 Flow Label
+type Ipv6FlowLabelModel struct {
+	Type     types.String `tfsdk:"type"`
+	Pos      types.Int32  `tfsdk:"nested_level_count"` // 0..3, default 0
+	LabelMin types.String `tfsdk:"label_min"`          // 20-bit flow label as hex string, e.g. 0x1 or FFFFF
+	LabelMax types.String `tfsdk:"label_max"`          // optional range max as hex string
+	Subnet   types.String `tfsdk:"subnet"`             // "none", "even", or "odd"
+}
+
+// IPv6 Next Header
+type Ipv6NextHeaderModel struct {
+	Type      types.String `tfsdk:"type"`
+	Pos       types.Int32  `tfsdk:"nested_level_count"`
+	HeaderMin types.Int32  `tfsdk:"header_min"`
+	HeaderMax types.Int32  `tfsdk:"header_max"`
+	Subnet    types.String `tfsdk:"subnet"`
+}
+
+// MPLS Label
+type MplsLabelModel struct {
+	Type     types.String `tfsdk:"type"`
+	Pos      types.Int32  `tfsdk:"nested_level_count"`
+	ValueMin types.Int32  `tfsdk:"value_min"`
+	ValueMax types.Int32  `tfsdk:"value_max"`
+	Subnet   types.String `tfsdk:"subnet"`
+}
+
+// Port Destination (TCP/UDP)
+type PortDestinationModel struct {
+	Type    types.String `tfsdk:"type"`
+	PortMin types.Int32  `tfsdk:"port_min"`
+	PortMax types.Int32  `tfsdk:"port_max"`
+	Subnet  types.String `tfsdk:"subnet"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// Port Source (TCP/UDP)
+type PortSourceModel struct {
+	Type    types.String `tfsdk:"type"`
+	PortMin types.Int32  `tfsdk:"port_min"`
+	PortMax types.Int32  `tfsdk:"port_max"`
+	Subnet  types.String `tfsdk:"subnet"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// TCP Control Flags
+type TcpControlModel struct {
+	Type  types.String `tfsdk:"type"`
+	Value types.String `tfsdk:"value"`
+	Mask  types.String `tfsdk:"mask"`
+	Pos   types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// VLAN ID
+type VlanModel struct {
+	Type    types.String `tfsdk:"type"`
+	Pos     types.Int32  `tfsdk:"nested_level_count"`
+	VlanMin types.Int32  `tfsdk:"vlan_min"`
+	VlanMax types.Int32  `tfsdk:"vlan_max"`
+	Subnet  types.String `tfsdk:"subnet"`
+}
+
+// VN-Tag Destination VIF ID
+type VntagDstVifIdModel struct {
+	Type   types.String `tfsdk:"type"`
+	VifMin types.Int32  `tfsdk:"vif_min"`
+	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// VN-Tag Source VIF ID
+type VntagSrcVifIdModel struct {
+	Type   types.String `tfsdk:"type"`
+	VifMin types.Int32  `tfsdk:"vif_min"`
+	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// VN-Tag VIF List ID
+type VntagVifListIdModel struct {
+	Type   types.String `tfsdk:"type"`
+	VifMin types.Int32  `tfsdk:"vif_min"`
+	VifMax types.Int32  `tfsdk:"vif_max"`
+	Subnet types.String `tfsdk:"subnet"`
+	Pos    types.Int32  `tfsdk:"nested_level_count"`
+}
+
+// VXLAN ID
+type VxlanIdModel struct {
+	Type        types.String `tfsdk:"type"`
+	VxlanMin    types.Int32  `tfsdk:"vxlan_min"`
+	VxlanMax    types.Int32  `tfsdk:"vxlan_max"`
+	VxlanSubset types.String `tfsdk:"subnet"`
+}
+
 // The model for the rules, which is a combination of the above rule elements with an OR between
 // them. This will translate to one element of passRule/dropRule in the swagger with the
 // elements of the struct representing one element of the matches array
@@ -202,6 +317,20 @@ type RulesModel struct {
 	Ipv4Ttl           *Ip4TtlRuleModel   `tfsdk:"ipv4_ttl"`
 	Ipv4Tos           *Ip4TosRuleModel   `tfsdk:"ipv4_tos"`
 	GreKey            *GreKeyRuleModel   `tfsdk:"gre_key"`
+	// Phase 2 new conditions
+	GtpuTeid        *GtpuTeidModel        `tfsdk:"gtp_teid"`
+	HostName        *HostNameModel        `tfsdk:"host_name"`
+	Ipv6FlowLabel   *Ipv6FlowLabelModel   `tfsdk:"ipv6_flow_label"`
+	Ipv6NextHeader  *Ipv6NextHeaderModel  `tfsdk:"ipv6_next_header"`
+	MplsLabel       *MplsLabelModel       `tfsdk:"mpls_label"`
+	PortDestination *PortDestinationModel `tfsdk:"port_destination"`
+	PortSource      *PortSourceModel      `tfsdk:"port_source"`
+	TcpControl      *TcpControlModel      `tfsdk:"tcp_control"`
+	Vlan            *VlanModel            `tfsdk:"vlan"`
+	VntagDstVifId   *VntagDstVifIdModel   `tfsdk:"vntag_dst_vif_id"`
+	VntagSrcVifId   *VntagSrcVifIdModel   `tfsdk:"vntag_src_vif_id"`
+	VntagVifListId  *VntagVifListIdModel  `tfsdk:"vntag_vif_list_id"`
+	VxlanId         *VxlanIdModel         `tfsdk:"vxlan_id"`
 }
 
 type AppRuleApplicationModel struct {
@@ -214,7 +343,7 @@ type AppProfileConfigRuleModel struct {
 }
 
 type AppRuleModel struct {
-	RuleId           types.Int32                  `tfsdk:"rule_id"`
+	RuleId           types.Int32                `tfsdk:"rule_id"`
 	AppProfileConfig *AppProfileConfigRuleModel `tfsdk:"app_profile_config"`
 }
 
@@ -297,7 +426,7 @@ type L2MacAddrGo struct {
 
 type IpVersionGo struct {
 	Type  string `json:"type"`
-	Pos   int32  `json:"pos,omitempty"`
+	Pos   int32  `json:"pos"`
 	Value string `json:"value"` // "v4" or "v6"
 }
 
@@ -380,6 +509,106 @@ type GreKeyGo struct {
 	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
 }
 
+// ===== Phase 2 Go Structs for FM wire format =====
+
+type GtpuTeidGo struct {
+	Type     string `json:"type"`               // "gtputeId"
+	Value    string `json:"value"`              // min TEID (4-byte hex)
+	ValueMax string `json:"valueMax,omitempty"` // max TEID (4-byte hex)
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type HostNameGo struct {
+	Type  string `json:"type"`  // "srcHostPrefix"
+	Value string `json:"value"` // host name prefix
+}
+
+type Ipv6FlowLabelGo struct {
+	Type     string `json:"type"`               // "ip6Flow"
+	Pos      int32  `json:"pos"`               // label position (0-3)
+	Value    string `json:"value"`              // min label (hex string)
+	ValueMax string `json:"valueMax,omitempty"` // max label (hex string)
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type Ipv6NextHeaderGo struct {
+	Type     string `json:"type"`               // "ipv6NextHeader"
+	Pos      int32  `json:"pos"`               // header position (0-3)
+	Value    int32  `json:"value"`              // min header
+	ValueMax int32  `json:"valueMax,omitempty"` // max header
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type MplsLabelGo struct {
+	Type     string `json:"type"`               // "mplsLabel"
+	Pos      int32  `json:"pos"`               // label position (0-4)
+	Value    int32  `json:"value"`              // min label
+	ValueMax int32  `json:"valueMax,omitempty"` // max label
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type PortDestinationGo struct {
+	Type     string `json:"type"`               // "portDst"
+	Value    int32  `json:"value"`              // min port
+	ValueMax int32  `json:"valueMax,omitempty"` // max port
+	Pos      int32  `json:"pos"`               // label position (0-4)
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type PortSourceGo struct {
+	Type     string `json:"type"`               // "portSrc"
+	Value    int32  `json:"value"`              // min port
+	ValueMax int32  `json:"valueMax,omitempty"` // max port
+	Pos      int32  `json:"pos"`               // label position (0-3)
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type TcpControlGo struct {
+	Type  string `json:"type"`           // "tcpCtl"
+	Value string `json:"value"`          // 1-byte hex TCP control value
+	Mask  string `json:"mask,omitempty"` // 1-byte hex TCP control mask
+	Pos   int32  `json:"pos"`            // nested level (0-3)
+}
+
+type VlanGo struct {
+	Type     string `json:"type"`               // "vlan"
+	Pos      int32  `json:"pos"`                // nested level
+	Value    int32  `json:"value"`              // min VLAN
+	ValueMax int32  `json:"valueMax,omitempty"` // max VLAN
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
+type VntagDstVifIdGo struct {
+	Type     string `json:"type"`               // "vntagDvifId"
+	Value    int32  `json:"value"`              // min VIF
+	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
+}
+
+type VntagSrcVifIdGo struct {
+	Type     string `json:"type"`               // "vntagSvifId"
+	Value    int32  `json:"value"`              // min VIF
+	ValueMax int32  `json:"valueMax,omitempty"` // max VIF
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
+}
+
+type VntagVifListIdGo struct {
+	Type     string `json:"type"`               // "vntagVifListId"
+	Value    int32  `json:"value"`              // min list ID
+	ValueMax int32  `json:"valueMax,omitempty"` // max list ID
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+	Pos      int32  `json:"pos"`                // nested level (0-3)
+}
+
+type VxlanIdGo struct {
+	Type     string `json:"type"`               // "vxlanId"
+	Value    int32  `json:"value"`              // min VXLAN
+	ValueMax int32  `json:"valueMax,omitempty"` // max VXLAN
+	Subset   string `json:"subset,omitempty"`   // "none" | "even" | "odd"
+}
+
 var ipv4Regex = regexp.MustCompile(
 	`^((25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})\.){3}(25[0-5]|2[0-4][0-9]|[0-1]?[0-9]{1,2})$`,
 )
@@ -392,6 +621,8 @@ var ipv6NetmaskRegex = regexp.MustCompile(`^([0-9A-F]{4}:){7}[0-9A-F]{4}$`)
 
 var hexByteRegex = regexp.MustCompile(`^[0-9A-Fa-f]{2}$`)
 var hex4ByteRegex = regexp.MustCompile(`^[0-9A-Fa-f]{8}$`)
+var teidHexRegex = regexp.MustCompile(`(?i)^(0x)?[0-9a-f]{1,8}$`)
+var flowLabelHexRegex = regexp.MustCompile(`(?i)^(0x)?[0-9a-f]{1,6}$`)
 
 // RulesGo represent a rule, which is an element in the pass/drop rules array in the swagger.
 // Matches here is got from the RulesModel, where each non-null element of the RulesModel
@@ -1486,6 +1717,1237 @@ func (v asfPacketCountVsBufferCountValidator) ValidateInt32(
 	}
 }
 
+// ===== Phase 2 Map Condition Schemas =====
+
+type gtpuTeidRangeValidator struct{}
+
+func (v gtpuTeidRangeValidator) Description(ctx context.Context) string {
+	return "teid_max must be greater than teid_min when both are set"
+}
+
+func (v gtpuTeidRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v gtpuTeidRangeValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent GtpuTeidModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.TeidMin.IsNull() || parent.TeidMin.IsUnknown() {
+		return
+	}
+
+	minStr := strings.TrimPrefix(strings.TrimPrefix(parent.TeidMin.ValueString(), "0x"), "0X")
+	maxStr := strings.TrimPrefix(strings.TrimPrefix(req.ConfigValue.ValueString(), "0x"), "0X")
+	minVal, err := strconv.ParseUint(minStr, 16, 32)
+	if err != nil {
+		return
+	}
+	maxVal, err := strconv.ParseUint(maxStr, 16, 32)
+	if err != nil {
+		return
+	}
+	if maxVal <= minVal {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid GTP-U TEID range",
+			fmt.Sprintf("teid_max (%s) must be greater than teid_min (%s)", req.ConfigValue.ValueString(), parent.TeidMin.ValueString()),
+		)
+	}
+}
+
+type gtpuTeidSubnetValidator struct{}
+
+func (v gtpuTeidSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when teid_max is set"
+}
+
+func (v gtpuTeidSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v gtpuTeidSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent GtpuTeidModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.TeidMax.IsNull() || parent.TeidMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid GTP-U TEID subnet",
+			"subnet can only be configured when teid_max is also configured.",
+		)
+	}
+}
+
+// GTP-U TEID schema
+func gtpuTeidSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("gtputeId")},
+			"teid_min": schema.StringAttribute{
+				Required: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						teidHexRegex,
+						"must be a hex value with optional 0x prefix, 1-8 hex digits (e.g. 0x1, 00000001, 0xABCD1234)",
+					),
+				},
+			},
+			"teid_max": schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						teidHexRegex,
+						"must be a hex value with optional 0x prefix, 1-8 hex digits (e.g. 0x1, 000000FF, 0xABCD1234)",
+					),
+					gtpuTeidRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					gtpuTeidSubnetValidator{},
+				},
+			},
+		},
+	}
+}
+
+// Host Name schema
+func hostNameSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":            schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("srcHostPrefix")},
+			"src_host_prefix": schema.StringAttribute{Optional: true, Validators: []validator.String{stringvalidator.LengthAtLeast(1)}},
+		},
+	}
+}
+
+type ipv6FlowLabelRangeValidator struct{}
+
+func (v ipv6FlowLabelRangeValidator) Description(ctx context.Context) string {
+	return "label_max must be greater than label_min when both are set"
+}
+
+func (v ipv6FlowLabelRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6FlowLabelRangeValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent Ipv6FlowLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.LabelMin.IsNull() || parent.LabelMin.IsUnknown() {
+		return
+	}
+
+	minStr := strings.TrimPrefix(strings.TrimPrefix(parent.LabelMin.ValueString(), "0x"), "0X")
+	maxStr := strings.TrimPrefix(strings.TrimPrefix(req.ConfigValue.ValueString(), "0x"), "0X")
+	minVal, err := strconv.ParseUint(minStr, 16, 32)
+	if err != nil {
+		return
+	}
+	maxVal, err := strconv.ParseUint(maxStr, 16, 32)
+	if err != nil {
+		return
+	}
+	if maxVal <= minVal {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 flow-label range",
+			fmt.Sprintf("label_max (%s) must be greater than label_min (%s)", req.ConfigValue.ValueString(), parent.LabelMin.ValueString()),
+		)
+	}
+}
+
+type ipv6FlowLabelSubnetValidator struct{}
+
+func (v ipv6FlowLabelSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when label_max is set"
+}
+
+func (v ipv6FlowLabelSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6FlowLabelSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent Ipv6FlowLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.LabelMax.IsNull() || parent.LabelMax.IsUnknown() || parent.LabelMax.ValueString() == "" {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 flow-label subnet",
+			"subnet can only be configured when label_max is also configured.",
+		)
+	}
+}
+
+// IPv6 Flow Label schema
+func ipv6FlowLabelSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6Flow")},
+			"nested_level_count": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+			"label_min": schema.StringAttribute{
+				MarkdownDescription: "Lower bound (inclusive) of the IPv6 20-bit flow label as hex (optional 0x prefix, 1-6 hex digits, e.g. 0x1 or FFFFF).",
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						flowLabelHexRegex,
+						"must be a hex value with optional 0x prefix and 1-6 hex digits (e.g. 0x1, FFFFF, 0xABCDE)",
+					),
+				},
+			},
+			"label_max": schema.StringAttribute{
+				MarkdownDescription: "Upper bound (inclusive) of the IPv6 20-bit flow label as hex (optional 0x prefix, 1-6 hex digits, e.g. 0x1 or FFFFF).",
+				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						flowLabelHexRegex,
+						"must be a hex value with optional 0x prefix and 1-6 hex digits (e.g. 0x1, FFFFF, 0xABCDE)",
+					),
+					ipv6FlowLabelRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				MarkdownDescription: "Restrict matches within [label_min, label_max] to none, even, or odd. Values other than none require label_max.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					ipv6FlowLabelSubnetValidator{},
+				},
+			},
+		},
+	}
+}
+
+type ipv6NextHeaderRangeValidator struct{}
+
+func (v ipv6NextHeaderRangeValidator) Description(ctx context.Context) string {
+	return "header_max must be greater than header_min when both are set"
+}
+
+func (v ipv6NextHeaderRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6NextHeaderRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent Ipv6NextHeaderModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.HeaderMin.IsNull() || parent.HeaderMin.IsUnknown() {
+		return
+	}
+
+	min := parent.HeaderMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 next-header range",
+			fmt.Sprintf("header_max (%d) must be greater than header_min (%d)", max, min),
+		)
+	}
+}
+
+type ipv6NextHeaderSubnetValidator struct{}
+
+func (v ipv6NextHeaderSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when header_max is set"
+}
+
+func (v ipv6NextHeaderSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v ipv6NextHeaderSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent Ipv6NextHeaderModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.HeaderMax.IsNull() || parent.HeaderMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid IPv6 next-header subset",
+			"subnet can only be configured when header_max is also configured.",
+		)
+	}
+}
+
+// IPv6 Next Header schema
+func ipv6NextHeaderSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("ip6NextHeader")},
+			"nested_level_count": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+			"header_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 255),
+				},
+			},
+			"header_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 255),
+					ipv6NextHeaderRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					ipv6NextHeaderSubnetValidator{},
+				},
+			},
+		},
+	}
+}
+
+type mplsLabelSubnetValidator struct{}
+
+type mplsLabelRangeValidator struct{}
+
+func (v mplsLabelRangeValidator) Description(ctx context.Context) string {
+	return "value_max must be greater than value_min when both are set"
+}
+
+func (v mplsLabelRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v mplsLabelRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent MplsLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.ValueMin.IsNull() || parent.ValueMin.IsUnknown() {
+		return
+	}
+
+	min := parent.ValueMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid MPLS label range",
+			fmt.Sprintf("value_max (%d) must be greater than value_min (%d)", max, min),
+		)
+	}
+}
+
+func (v mplsLabelSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when value_max is set"
+}
+
+func (v mplsLabelSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v mplsLabelSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent MplsLabelModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.ValueMax.IsNull() || parent.ValueMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid MPLS label subnet",
+			"subnet can only be configured when value_max is also configured.",
+		)
+	}
+}
+
+// MPLS Label schema
+func mplsLabelSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("mplsLabel")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
+			"value_min":          schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 1048576)}},
+			"value_max":          schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 1048576), mplsLabelRangeValidator{}}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), mplsLabelSubnetValidator{}}},
+		},
+	}
+}
+
+type portDestinationSubnetValidator struct{}
+
+type portDestinationRangeValidator struct{}
+
+func (v portDestinationRangeValidator) Description(ctx context.Context) string {
+	return "port_max must be greater than port_min when both are set"
+}
+
+func (v portDestinationRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portDestinationRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent PortDestinationModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMin.IsNull() || parent.PortMin.IsUnknown() {
+		return
+	}
+
+	min := parent.PortMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port destination range",
+			fmt.Sprintf("port_max (%d) must be greater than port_min (%d)", max, min),
+		)
+	}
+}
+
+func (v portDestinationSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when port_max is set"
+}
+
+func (v portDestinationSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portDestinationSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent PortDestinationModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMax.IsNull() || parent.PortMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port destination subnet",
+			"subnet can only be configured when port_max is also configured.",
+		)
+	}
+}
+
+type portSourceRangeValidator struct{}
+
+func (v portSourceRangeValidator) Description(ctx context.Context) string {
+	return "port_max must be greater than or equal to port_min when both are set"
+}
+
+func (v portSourceRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portSourceRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent PortSourceModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMin.IsNull() || parent.PortMin.IsUnknown() {
+		return
+	}
+
+	min := parent.PortMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port source range",
+			fmt.Sprintf("port_max (%d) must be greater than port_min (%d)", max, min),
+		)
+	}
+}
+
+type portSourceSubnetValidator struct{}
+
+func (v portSourceSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when port_max is set"
+}
+
+type vlanRangeValidator struct{}
+
+func (v vlanRangeValidator) Description(ctx context.Context) string {
+	return "vlan_max must be greater than vlan_min when both are set"
+}
+
+func (v vlanRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vlanRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VlanModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VlanMin.IsNull() || parent.VlanMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VlanMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VLAN range",
+			fmt.Sprintf("vlan_max (%d) must be greater than vlan_min (%d)", max, min),
+		)
+	}
+}
+
+type vlanSubnetValidator struct{}
+
+func (v vlanSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vlan_max is set"
+}
+
+func (v vlanSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vlanSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VlanModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VlanMax.IsNull() || parent.VlanMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VLAN subnet",
+			"subnet can only be configured when vlan_max is also configured.",
+		)
+	}
+}
+
+func (v portSourceSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v portSourceSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent PortSourceModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.PortMax.IsNull() || parent.PortMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid port source subnet",
+			"subnet can only be configured when port_max is also configured.",
+		)
+	}
+}
+
+// Port Destination schema
+func portDestinationSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portDst")},
+			"port_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portDestinationRangeValidator{}}},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portDestinationSubnetValidator{}}},
+		},
+	}
+}
+
+// Port Source schema
+func portSourceSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("portSrc")},
+			"port_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 65535)}},
+			"port_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 65535), portSourceRangeValidator{}}},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 3)}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), portSourceSubnetValidator{}}},
+		},
+	}
+}
+
+// TCP Control Flags schema
+func tcpControlSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{
+				Computed: true,
+				Default:  stringdefault.StaticString("tcpCtl"),
+			},
+			"value": schema.StringAttribute{
+				MarkdownDescription: "TCP control value to match as a 1-byte hexadecimal value (exactly 2 hex characters, e.g. 12).",
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hexByteRegex,
+						"must be a 1-byte hexadecimal value (exactly 2 hex characters, e.g. 12)",
+					),
+				},
+			},
+			"mask": schema.StringAttribute{
+				MarkdownDescription: "Optional TCP control mask as a 1-byte hexadecimal value (exactly 2 hex characters, e.g. FF).",
+				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						hexByteRegex,
+						"must be a 1-byte hexadecimal value (exactly 2 hex characters, e.g. FF)",
+					),
+				},
+			},
+			"nested_level_count": schema.Int32Attribute{
+				MarkdownDescription: "For tunneled/stacked TCP headers, which header to inspect. 0=any, 1=outer, 2=second, 3=third.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+		},
+	}
+}
+
+// VLAN schema
+func vlanSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":               schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vlan")},
+			"nested_level_count": schema.Int32Attribute{Optional: true, Computed: true, Default: int32default.StaticInt32(0), Validators: []validator.Int32{int32validator.Between(0, 4)}},
+			"vlan_min":           schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(1, 4094)}},
+			"vlan_max":           schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(1, 4094), vlanRangeValidator{}}},
+			"subnet":             schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("none"), Validators: []validator.String{stringvalidator.OneOf("none", "even", "odd"), vlanSubnetValidator{}}},
+		},
+	}
+}
+
+// VN-Tag Destination VIF ID schema
+func vntagDstVifIdSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagDvifId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+					vntagDstVifIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagDstVifIdSubnetValidator{},
+				},
+			},
+			"nested_level_count": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+		},
+	}
+}
+
+type vntagDstVifIdRangeValidator struct{}
+
+func (v vntagDstVifIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than vif_min when both are set"
+}
+
+func (v vntagDstVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagDstVifIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagDstVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag destination VIF range",
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagDstVifIdSubnetValidator struct{}
+
+func (v vntagDstVifIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagDstVifIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagDstVifIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagDstVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag destination VIF subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
+	}
+}
+
+// VN-Tag Source VIF ID schema
+func vntagSrcVifIdSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagSvifId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 4096),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 4096),
+					vntagSrcVifIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagSrcVifIdSubnetValidator{},
+				},
+			},
+			"nested_level_count": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+		},
+	}
+}
+
+type vntagSrcVifIdRangeValidator struct{}
+
+func (v vntagSrcVifIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than vif_min when both are set"
+}
+
+func (v vntagSrcVifIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagSrcVifIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagSrcVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag source VIF range",
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagSrcVifIdSubnetValidator struct{}
+
+func (v vntagSrcVifIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagSrcVifIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagSrcVifIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagSrcVifIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag source VIF subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
+	}
+}
+
+// VN-Tag VIF List ID schema
+func vntagVifListIdSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type": schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vntagVifListId")},
+			"vif_min": schema.Int32Attribute{
+				Required: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+				},
+			},
+			"vif_max": schema.Int32Attribute{
+				Optional: true,
+				Validators: []validator.Int32{
+					int32validator.Between(0, 16384),
+					vntagVifListIdRangeValidator{},
+				},
+			},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vntagVifListIdSubnetValidator{},
+				},
+			},
+			"nested_level_count": schema.Int32Attribute{
+				Optional: true,
+				Computed: true,
+				Default:  int32default.StaticInt32(0),
+				Validators: []validator.Int32{
+					int32validator.Between(0, 3),
+				},
+			},
+		},
+	}
+}
+
+type vntagVifListIdRangeValidator struct{}
+
+func (v vntagVifListIdRangeValidator) Description(ctx context.Context) string {
+	return "vif_max must be greater than vif_min when both are set"
+}
+
+func (v vntagVifListIdRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagVifListIdRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VntagVifListIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMin.IsNull() || parent.VifMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VifMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag VIF list range",
+			fmt.Sprintf("vif_max (%d) must be greater than vif_min (%d)", max, min),
+		)
+	}
+}
+
+type vntagVifListIdSubnetValidator struct{}
+
+func (v vntagVifListIdSubnetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vif_max is set"
+}
+
+func (v vntagVifListIdSubnetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vntagVifListIdSubnetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VntagVifListIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VifMax.IsNull() || parent.VifMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VN-Tag VIF list subnet",
+			"subnet can only be configured when vif_max is also configured.",
+		)
+	}
+}
+
+type vxlanRangeValidator struct{}
+
+func (v vxlanRangeValidator) Description(ctx context.Context) string {
+	return "vxlan_max must be greater than vxlan_min when both are set"
+}
+
+func (v vxlanRangeValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vxlanRangeValidator) ValidateInt32(
+	ctx context.Context,
+	req validator.Int32Request,
+	resp *validator.Int32Response,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	var parent VxlanIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VxlanMin.IsNull() || parent.VxlanMin.IsUnknown() {
+		return
+	}
+
+	min := parent.VxlanMin.ValueInt32()
+	max := req.ConfigValue.ValueInt32()
+	if max <= min {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VXLAN ID range",
+			fmt.Sprintf("vxlan_max (%d) must be greater than vxlan_min (%d)", max, min),
+		)
+	}
+}
+
+type vxlanSubsetValidator struct{}
+
+func (v vxlanSubsetValidator) Description(ctx context.Context) string {
+	return "subnet can only be configured when vxlan_max is set"
+}
+
+func (v vxlanSubsetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v vxlanSubsetValidator) ValidateString(
+	ctx context.Context,
+	req validator.StringRequest,
+	resp *validator.StringResponse,
+) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "none" {
+		return
+	}
+
+	var parent VxlanIdModel
+	diags := req.Config.GetAttribute(ctx, req.Path.ParentPath(), &parent)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if parent.VxlanMax.IsNull() || parent.VxlanMax.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid VXLAN ID subset",
+			"subnet can only be configured when vxlan_max is also configured.",
+		)
+	}
+}
+
+// VXLAN ID schema
+func vxlanIdSchema() schema.SingleNestedAttribute {
+	return schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"type":      schema.StringAttribute{Computed: true, Default: stringdefault.StaticString("vxlanId")},
+			"vxlan_min": schema.Int32Attribute{Required: true, Validators: []validator.Int32{int32validator.Between(0, 16777215)}},
+			"vxlan_max": schema.Int32Attribute{Optional: true, Validators: []validator.Int32{int32validator.Between(0, 16777215), vxlanRangeValidator{}}},
+			"subnet": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("none"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("none", "even", "odd"),
+					vxlanSubsetValidator{},
+				},
+			},
+		},
+	}
+}
+
 // Comibine all the above rule schemas into a map rule schema.
 func RulesSchema() schema.NestedAttributeObject {
 	return schema.NestedAttributeObject{
@@ -1514,6 +2976,20 @@ func RulesSchema() schema.NestedAttributeObject {
 			"ipv4_ttl":            ip4TtlSchema(),
 			"ipv4_tos":            ip4TosSchema(),
 			"gre_key":             greKeySchema(),
+			// Phase 2 new conditions
+			"gtp_teid":          gtpuTeidSchema(),
+			"host_name":         hostNameSchema(),
+			"ipv6_flow_label":   ipv6FlowLabelSchema(),
+			"ipv6_next_header":  ipv6NextHeaderSchema(),
+			"mpls_label":        mplsLabelSchema(),
+			"port_destination":  portDestinationSchema(),
+			"port_source":       portSourceSchema(),
+			"tcp_control":       tcpControlSchema(),
+			"vlan":              vlanSchema(),
+			"vntag_dst_vif_id":  vntagDstVifIdSchema(),
+			"vntag_src_vif_id":  vntagSrcVifIdSchema(),
+			"vntag_vif_list_id": vntagVifListIdSchema(),
+			"vxlan_id":          vxlanIdSchema(),
 		},
 	}
 }
@@ -1582,6 +3058,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 								Attributes: map[string]schema.Attribute{
 									"applications": schema.ListNestedAttribute{
 										Optional: true,
+										Validators: []validator.List{
+											listvalidator.SizeAtLeast(1),
+										},
 										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 											"name": schema.StringAttribute{Required: true},
 										}},
@@ -1602,6 +3081,9 @@ func RuleSetSchema() schema.NestedAttributeObject {
 								Attributes: map[string]schema.Attribute{
 									"applications": schema.ListNestedAttribute{
 										Optional: true,
+										Validators: []validator.List{
+											listvalidator.SizeAtLeast(1),
+										},
 										NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 											"name": schema.StringAttribute{Required: true},
 										}},
@@ -1852,22 +3334,29 @@ func ModelIp4ProtoToGo(_ context.Context, m *Ip4ProtoRuleModel) *Ip4ProtoGo {
 	min := m.ProtocolMin.ValueInt32()
 
 	var maxStr string
+	maxConfigured := false
 	if !m.ProtocolMax.IsNull() && !m.ProtocolMax.IsUnknown() {
 		maxStr = strconv.FormatInt(int64(m.ProtocolMax.ValueInt32()), 10)
+		maxConfigured = true
 	}
 
-	subset := m.ProtocolSubset.ValueString()
-	if subset == "" || subset == "all" {
-		subset = "none" // FM encoding for “no subset filter”
-	}
-
-	return &Ip4ProtoGo{
+	ip4Proto := &Ip4ProtoGo{
 		Type:     m.Type.ValueString(), // "ip4Proto"
 		Pos:      m.Pos.ValueInt32(),
 		Value:    strconv.FormatInt(int64(min), 10),
 		ValueMax: maxStr,
-		Subset:   subset, // "none", "even", or "odd"
 	}
+
+	// subset is only meaningful when max is configured.
+	if maxConfigured {
+		subset := m.ProtocolSubset.ValueString()
+		if subset == "" || subset == "all" {
+			subset = "none" // FM encoding for “no subset filter”
+		}
+		ip4Proto.Subset = subset // "none", "even", or "odd"
+	}
+
+	return ip4Proto
 }
 
 func ModelErspanIdToGo(_ context.Context, m *ErspanIdRuleModel) *ErspanIdGo {
@@ -1953,6 +3442,219 @@ func ModelGreKeyToGo(_ context.Context, m *GreKeyRuleModel) *GreKeyGo {
 		Value:    min,
 		ValueMax: maxStr,
 		Subset:   subset, // "none", "even", or "odd"
+	}
+}
+
+// ===== Phase 2 Model-to-Go Converter Functions =====
+
+func ModelGtpuTeidToGo(_ context.Context, m *GtpuTeidModel) *GtpuTeidGo {
+	subset := m.Subnet.ValueString()
+	if subset == "" || subset == "all" {
+		subset = "none"
+	}
+
+	g := &GtpuTeidGo{
+		Type:   m.Type.ValueString(),
+		Value:  m.TeidMin.ValueString(),
+		Subset: subset,
+	}
+	if !m.TeidMax.IsNull() && !m.TeidMax.IsUnknown() {
+		g.ValueMax = m.TeidMax.ValueString()
+	}
+	return g
+}
+
+func ModelHostNameToGo(_ context.Context, m *HostNameModel) *HostNameGo {
+	return &HostNameGo{
+		Type:  m.Type.ValueString(),
+		Value: m.SrcHostPrefix.ValueString(),
+	}
+}
+
+func ModelIpv6FlowLabelToGo(_ context.Context, m *Ipv6FlowLabelModel) *Ipv6FlowLabelGo {
+	label := &Ipv6FlowLabelGo{
+		Type:  "ip6Flow",
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.LabelMin.ValueString(),
+	}
+	if !m.LabelMax.IsNull() && !m.LabelMax.IsUnknown() && m.LabelMax.ValueString() != "" {
+		label.ValueMax = m.LabelMax.ValueString()
+		label.Subset = m.Subnet.ValueString()
+	}
+	return label
+}
+
+func ModelIpv6NextHeaderToGo(_ context.Context, m *Ipv6NextHeaderModel) *Ipv6NextHeaderGo {
+	min := m.HeaderMin.ValueInt32()
+	var maxInt int32
+	if !m.HeaderMax.IsNull() && !m.HeaderMax.IsUnknown() {
+		maxInt = m.HeaderMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" || subset == "all" {
+		subset = "none"
+	}
+	return &Ipv6NextHeaderGo{
+		Type:     m.Type.ValueString(),
+		Pos:      m.Pos.ValueInt32(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+	}
+}
+
+func ModelMplsLabelToGo(_ context.Context, m *MplsLabelModel) *MplsLabelGo {
+	label := &MplsLabelGo{
+		Type:  m.Type.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.ValueMin.ValueInt32(),
+	}
+	if !m.ValueMax.IsNull() && !m.ValueMax.IsUnknown() {
+		label.ValueMax = m.ValueMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
+	}
+	return label
+}
+
+func ModelPortDestinationToGo(_ context.Context, m *PortDestinationModel) *PortDestinationGo {
+
+	label := &PortDestinationGo{
+		Type:  m.Type.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.PortMin.ValueInt32(),
+	}
+	if !m.PortMax.IsNull() && !m.PortMax.IsUnknown() {
+		label.ValueMax = m.PortMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
+	}
+	return label
+
+}
+
+func ModelPortSourceToGo(_ context.Context, m *PortSourceModel) *PortSourceGo {
+	label := &PortSourceGo{
+		Type:  m.Type.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+		Value: m.PortMin.ValueInt32(),
+	}
+	if !m.PortMax.IsNull() && !m.PortMax.IsUnknown() {
+		label.ValueMax = m.PortMax.ValueInt32()
+		label.Subset = m.Subnet.ValueString()
+	}
+	return label
+}
+
+func ModelTcpControlToGo(_ context.Context, m *TcpControlModel) *TcpControlGo {
+	tcpControl := &TcpControlGo{
+		Type:  m.Type.ValueString(),
+		Value: m.Value.ValueString(),
+		Pos:   m.Pos.ValueInt32(),
+	}
+	if !m.Mask.IsNull() && !m.Mask.IsUnknown() && m.Mask.ValueString() != "" {
+		tcpControl.Mask = m.Mask.ValueString()
+	}
+	return tcpControl
+}
+
+func ModelVlanToGo(_ context.Context, m *VlanModel) *VlanGo {
+	min := m.VlanMin.ValueInt32()
+	var maxInt int32
+	if !m.VlanMax.IsNull() && !m.VlanMax.IsUnknown() {
+		maxInt = m.VlanMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	return &VlanGo{
+		Type:     m.Type.ValueString(),
+		Pos:      m.Pos.ValueInt32(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+	}
+}
+
+func ModelVntagDstVifIdToGo(_ context.Context, m *VntagDstVifIdModel) *VntagDstVifIdGo {
+	min := m.VifMin.ValueInt32()
+	var maxInt int32
+	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+		maxInt = m.VifMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	typeVal := m.Type.ValueString()
+	if typeVal == "" || typeVal == "vntagDstVifId" {
+		typeVal = "vntagDvifId"
+	}
+	return &VntagDstVifIdGo{
+		Type:     typeVal,
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
+	}
+}
+
+func ModelVntagSrcVifIdToGo(_ context.Context, m *VntagSrcVifIdModel) *VntagSrcVifIdGo {
+	min := m.VifMin.ValueInt32()
+	var maxInt int32
+	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+		maxInt = m.VifMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	typeVal := m.Type.ValueString()
+	if typeVal == "" || typeVal == "vntagSrcVifId" {
+		typeVal = "vntagSvifId"
+	}
+	return &VntagSrcVifIdGo{
+		Type:     typeVal,
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
+	}
+}
+
+func ModelVntagVifListIdToGo(_ context.Context, m *VntagVifListIdModel) *VntagVifListIdGo {
+	min := m.VifMin.ValueInt32()
+	var maxInt int32
+	if !m.VifMax.IsNull() && !m.VifMax.IsUnknown() {
+		maxInt = m.VifMax.ValueInt32()
+	}
+	subset := m.Subnet.ValueString()
+	if subset == "" {
+		subset = "none"
+	}
+	return &VntagVifListIdGo{
+		Type:     m.Type.ValueString(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
+		Pos:      m.Pos.ValueInt32(),
+	}
+}
+
+func ModelVxlanIdToGo(_ context.Context, m *VxlanIdModel) *VxlanIdGo {
+	min := m.VxlanMin.ValueInt32()
+	var maxInt int32
+	if !m.VxlanMax.IsNull() && !m.VxlanMax.IsUnknown() {
+		maxInt = m.VxlanMax.ValueInt32()
+	}
+	subset := m.VxlanSubset.ValueString()
+	if subset == "" || subset == "all" {
+		subset = "none"
+	}
+	return &VxlanIdGo{
+		Type:     m.Type.ValueString(),
+		Value:    min,
+		ValueMax: maxInt,
+		Subset:   subset,
 	}
 }
 
@@ -2061,6 +3763,59 @@ func ModelRulesToGoRules(ctx context.Context, rulesModel *RulesModel) RulesGo {
 
 	if rulesModel.GreKey != nil {
 		goRules.Matches = append(goRules.Matches, ModelGreKeyToGo(ctx, rulesModel.GreKey))
+	}
+
+	// Phase 2 new conditions
+	if rulesModel.GtpuTeid != nil {
+		goRules.Matches = append(goRules.Matches, ModelGtpuTeidToGo(ctx, rulesModel.GtpuTeid))
+	}
+
+	if rulesModel.HostName != nil {
+		goRules.Matches = append(goRules.Matches, ModelHostNameToGo(ctx, rulesModel.HostName))
+	}
+
+	if rulesModel.Ipv6FlowLabel != nil {
+		goRules.Matches = append(goRules.Matches, ModelIpv6FlowLabelToGo(ctx, rulesModel.Ipv6FlowLabel))
+	}
+
+	if rulesModel.Ipv6NextHeader != nil {
+		goRules.Matches = append(goRules.Matches, ModelIpv6NextHeaderToGo(ctx, rulesModel.Ipv6NextHeader))
+	}
+
+	if rulesModel.MplsLabel != nil {
+		goRules.Matches = append(goRules.Matches, ModelMplsLabelToGo(ctx, rulesModel.MplsLabel))
+	}
+
+	if rulesModel.PortDestination != nil {
+		goRules.Matches = append(goRules.Matches, ModelPortDestinationToGo(ctx, rulesModel.PortDestination))
+	}
+
+	if rulesModel.PortSource != nil {
+		goRules.Matches = append(goRules.Matches, ModelPortSourceToGo(ctx, rulesModel.PortSource))
+	}
+
+	if rulesModel.TcpControl != nil {
+		goRules.Matches = append(goRules.Matches, ModelTcpControlToGo(ctx, rulesModel.TcpControl))
+	}
+
+	if rulesModel.Vlan != nil {
+		goRules.Matches = append(goRules.Matches, ModelVlanToGo(ctx, rulesModel.Vlan))
+	}
+
+	if rulesModel.VntagDstVifId != nil {
+		goRules.Matches = append(goRules.Matches, ModelVntagDstVifIdToGo(ctx, rulesModel.VntagDstVifId))
+	}
+
+	if rulesModel.VntagSrcVifId != nil {
+		goRules.Matches = append(goRules.Matches, ModelVntagSrcVifIdToGo(ctx, rulesModel.VntagSrcVifId))
+	}
+
+	if rulesModel.VntagVifListId != nil {
+		goRules.Matches = append(goRules.Matches, ModelVntagVifListIdToGo(ctx, rulesModel.VntagVifListId))
+	}
+
+	if rulesModel.VxlanId != nil {
+		goRules.Matches = append(goRules.Matches, ModelVxlanIdToGo(ctx, rulesModel.VxlanId))
 	}
 
 	return goRules
@@ -2542,20 +4297,87 @@ func copyGoRuleGrouptoModel(
 			modelRules.Ipv4Tos = GoIp4TosToModel(ruleElements)
 		case "greKey":
 			modelRules.GreKey = GoGreKeyToModel(ruleElements)
+		// Phase 2 new conditions
+		case "gtputeId", "gtpuTeid":
+			modelRules.GtpuTeid = GoGtpuTeidToModel(ruleElements)
+		case "hostName", "srcHostPrefix":
+			modelRules.HostName = GoHostNameToModel(ruleElements)
+		case "ip6Flow", "ipv6FlowLabel":
+			modelRules.Ipv6FlowLabel = GoIpv6FlowLabelToModel(ruleElements)
+		case "ip6NextHeader", "ipv6NextHeader":
+			modelRules.Ipv6NextHeader = GoIpv6NextHeaderToModel(ruleElements)
+		case "mplsLabel":
+			modelRules.MplsLabel = GoMplsLabelToModel(ruleElements)
+		case "portDst":
+			modelRules.PortDestination = GoPortDestinationToModel(ruleElements)
+		case "portSrc":
+			modelRules.PortSource = GoPortSourceToModel(ruleElements)
+		case "tcpControl", "tcpCtl":
+			modelRules.TcpControl = GoTcpControlToModel(ruleElements)
+		case "vlan":
+			modelRules.Vlan = GoVlanToModel(ruleElements)
+		case "vntagDstVifId", "vntagDvifId":
+			modelRules.VntagDstVifId = GoVntagDstVifIdToModel(ruleElements)
+		case "vntagSrcVifId", "vntagSvifId":
+			modelRules.VntagSrcVifId = GoVntagSrcVifIdToModel(ruleElements)
+		case "vntagVifListId":
+			modelRules.VntagVifListId = GoVntagVifListIdToModel(ruleElements)
+		case "vxlanId":
+			modelRules.VxlanId = GoVxlanIdToModel(ruleElements)
 		}
 	}
 }
 
 // anyToInt32 is used only when reading FM JSON that was unmarshalled into
-// interface{} / map[string]any. encoding/json represents all numbers in this
-// case as float64, so we normalize them here. On unexpected types we panic
-// so that FM/schema bugs are caught early.
+// interface{} / map[string]any. encoding/json represents all numbers as float64
+// when unmarshalling into interface{}, but some FM API responses may encode
+// numeric fields as strings; both are handled here.
 func anyToInt32(v any, field string) int32 {
 	switch x := v.(type) {
 	case float64:
 		return int32(x)
 	case int32:
 		return x
+	case int:
+		return int32(x)
+	case int64:
+		return int32(x)
+	case string:
+		n, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return 0
+		}
+		return int32(n)
+	default:
+		panic(fmt.Sprintf("unexpected type for %s: %T (%v)", field, v, v))
+	}
+}
+
+// anyToHexU32String normalizes numeric FM values to 8-digit uppercase hex.
+// FM may return numbers as float64 or strings (hex with/without 0x or decimal).
+func anyToHexU32String(v any, field string) string {
+	switch x := v.(type) {
+	case float64:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int32:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int:
+		return fmt.Sprintf("%08X", uint32(x))
+	case int64:
+		return fmt.Sprintf("%08X", uint32(x))
+	case string:
+		s := strings.TrimSpace(x)
+		s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+		if s == "" {
+			return "00000000"
+		}
+		if n, err := strconv.ParseUint(s, 16, 32); err == nil {
+			return fmt.Sprintf("%08X", uint32(n))
+		}
+		if n, err := strconv.ParseUint(s, 10, 32); err == nil {
+			return fmt.Sprintf("%08X", uint32(n))
+		}
+		panic(fmt.Sprintf("unexpected string format for %s: %q", field, x))
 	default:
 		panic(fmt.Sprintf("unexpected type for %s: %T (%v)", field, v, v))
 	}
@@ -2792,19 +4614,23 @@ func GoIp4ProtoToModel(ruleElements map[string]any) *Ip4ProtoRuleModel {
 	}
 
 	// valueMax -> protocol_max (numeric; use anyToInt32)
+	maxConfigured := false
 	if v, ok := ruleElements["valueMax"]; ok {
 		m.ProtocolMax = types.Int32Value(anyToInt32(v, "matches.valueMax"))
+		maxConfigured = true
 	}
 
-	// subset -> protocol_subset; FM "none" stays as TF "none"
-	subset := "none"
-	if v, ok := ruleElements["subset"]; ok {
-		s := v.(string)
-		if s != "" && s != "none" {
-			subset = s // "even" or "odd"
+	// subset is only represented in TF state when protocol_max is present.
+	if maxConfigured {
+		subset := "none"
+		if v, ok := ruleElements["subset"]; ok {
+			s := v.(string)
+			if s != "" && s != "none" {
+				subset = s // "even" or "odd"
+			}
 		}
+		m.ProtocolSubset = types.StringValue(subset)
 	}
-	m.ProtocolSubset = types.StringValue(subset)
 
 	return m
 }
@@ -2918,6 +4744,285 @@ func GoGreKeyToModel(ruleElements map[string]any) *GreKeyRuleModel {
 	}
 	m.GreKeySubset = types.StringValue(subset)
 
+	return m
+}
+
+// ===== Phase 2 Go-to-Model Converter Functions =====
+
+func GoGtpuTeidToModel(ruleElements map[string]any) *GtpuTeidModel {
+	m := &GtpuTeidModel{
+		Type:   types.StringValue("gtputeId"),
+		Subnet: types.StringValue("none"),
+	}
+	
+	if v, ok := ruleElements["value"]; ok {
+		m.TeidMin = types.StringValue(anyToHexU32String(v, "gtpuTeid.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.TeidMax = types.StringValue(anyToHexU32String(v, "gtpuTeid.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if s, ok2 := v.(string); ok2 && s != "" && s != "all" {
+			m.Subnet = types.StringValue(s)
+		}
+	}
+	return m
+}
+
+func GoHostNameToModel(ruleElements map[string]any) *HostNameModel {
+	m := &HostNameModel{
+		Type: types.StringValue("srcHostPrefix"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.SrcHostPrefix = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoIpv6FlowLabelToModel(ruleElements map[string]any) *Ipv6FlowLabelModel {
+	m := &Ipv6FlowLabelModel{
+		Type:     types.StringValue("ip6Flow"),
+		Pos:      types.Int32Value(0),
+		LabelMin: types.StringNull(),
+		LabelMax: types.StringNull(),
+		Subnet:   types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "ipv6FlowLabel.pos"))
+	}
+	if v, ok := ruleElements["value"]; ok && v != nil {
+		m.LabelMin = types.StringValue(fmt.Sprintf("%v", v))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.LabelMax = types.StringValue(fmt.Sprintf("%v", v))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoIpv6NextHeaderToModel(ruleElements map[string]any) *Ipv6NextHeaderModel {
+	m := &Ipv6NextHeaderModel{
+		Type: types.StringValue("ip6NextHeader"),
+		Pos:  types.Int32Value(0),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "ipv6NextHeader.pos"))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.HeaderMin = types.Int32Value(anyToInt32(v, "ipv6NextHeader.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.HeaderMax = types.Int32Value(anyToInt32(v, "ipv6NextHeader.valueMax"))
+	}
+	subset := "none"
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" && v.(string) != "all" {
+		subset = v.(string)
+	}
+	m.Subnet = types.StringValue(subset)
+	return m
+}
+
+func GoMplsLabelToModel(ruleElements map[string]any) *MplsLabelModel {
+	m := &MplsLabelModel{
+		Type:   types.StringValue("mplsLabel"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "mplsLabel.pos"))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.ValueMin = types.Int32Value(anyToInt32(v, "mplsLabel.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.ValueMax = types.Int32Value(anyToInt32(v, "mplsLabel.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoPortDestinationToModel(ruleElements map[string]any) *PortDestinationModel {
+	
+	m := &PortDestinationModel{
+		Type:   types.StringValue("portDst"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "portDst.pos"))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.PortMin = types.Int32Value(anyToInt32(v, "portDst.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.PortMax = types.Int32Value(anyToInt32(v, "portDst.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok && v.(string) != "" {
+		m.Subnet = types.StringValue(v.(string))
+	}
+	return m
+}
+
+func GoPortSourceToModel(ruleElements map[string]any) *PortSourceModel {
+	m := &PortSourceModel{
+		Type:   types.StringValue("portSrc"),
+		Pos:    types.Int32Value(0),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "portSrc.pos"))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.PortMin = types.Int32Value(anyToInt32(v, "portSrc.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.PortMax = types.Int32Value(anyToInt32(v, "portSrc.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		subset, ok := v.(string)
+		if ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	return m
+}
+
+func GoTcpControlToModel(ruleElements map[string]any) *TcpControlModel {
+	m := &TcpControlModel{
+		Type: types.StringValue("tcpCtl"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "tcpCtl.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.Value = types.StringValue(v.(string))
+	}
+	if v, ok := ruleElements["mask"]; ok {
+		if mask, ok := v.(string); ok && mask != "" {
+			m.Mask = types.StringValue(mask)
+		}
+	}
+	return m
+}
+
+func GoVlanToModel(ruleElements map[string]any) *VlanModel {
+	m := &VlanModel{
+		Type:   types.StringValue("vlan"),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.VlanMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.VlanMax = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		subset, ok := v.(string)
+		if ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	return m
+}
+
+func GoVntagDstVifIdToModel(ruleElements map[string]any) *VntagDstVifIdModel {
+	m := &VntagDstVifIdModel{
+		Type:   types.StringValue("vntagDvifId"),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagDvifId.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagDvifId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagDvifId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
+	}
+	return m
+}
+
+func GoVntagSrcVifIdToModel(ruleElements map[string]any) *VntagSrcVifIdModel {
+	m := &VntagSrcVifIdModel{
+		Type:   types.StringValue("vntagSvifId"),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagSvifId.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagSvifId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagSvifId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
+	}
+	return m
+}
+
+func GoVntagVifListIdToModel(ruleElements map[string]any) *VntagVifListIdModel {
+	m := &VntagVifListIdModel{
+		Type:   types.StringValue("vntagVifListId"),
+		Subnet: types.StringValue("none"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.VifMin = types.Int32Value(anyToInt32(v, "vntagVifListId.value"))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.VifMax = types.Int32Value(anyToInt32(v, "vntagVifListId.valueMax"))
+	}
+	if v, ok := ruleElements["subset"]; ok {
+		if subset, ok := v.(string); ok && subset != "" {
+			m.Subnet = types.StringValue(subset)
+		}
+	}
+	if v, ok := ruleElements["pos"]; ok {
+		m.Pos = types.Int32Value(anyToInt32(v, "vntagVifListId.pos"))
+	} else {
+		m.Pos = types.Int32Value(0)
+	}
+	return m
+}
+
+func GoVxlanIdToModel(ruleElements map[string]any) *VxlanIdModel {
+	m := &VxlanIdModel{
+		Type: types.StringValue("vxlanId"),
+	}
+	if v, ok := ruleElements["value"]; ok {
+		m.VxlanMin = types.Int32Value(int32(v.(float64)))
+	}
+	if v, ok := ruleElements["valueMax"]; ok && v != nil {
+		m.VxlanMax = types.Int32Value(int32(v.(float64)))
+	}
+	subset := "none"
+	if v, ok := ruleElements["subset"]; ok {
+		if s, ok2 := v.(string); ok2 && s != "" && s != "all" {
+			subset = s
+		}
+	}
+	m.VxlanSubset = types.StringValue(subset)
 	return m
 }
 

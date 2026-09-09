@@ -395,6 +395,7 @@ func (im *InclusionMap) ValidateConfig(
 	}
 
 	validateNilDropRules(cfg.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&cfg, "inclusion", &resp.Diagnostics)
 }
 
 func (im *InclusionMap) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -428,6 +429,7 @@ func (im *InclusionMap) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	validateNilDropRules(data.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&data, "inclusion", &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -509,6 +511,7 @@ func (im *InclusionMap) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	validateNilDropRules(planData.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&planData, "inclusion", &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -569,6 +572,31 @@ func (em *ExclusionMap) ValidateConfig(
 	}
 
 	validateNilPassRules(cfg.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&cfg, "exclusion", &resp.Diagnostics)
+}
+
+func validateAtsMapUnsupportedFields(data *MapModel, mapKind string, diags *diag.Diagnostics) {
+	if data == nil {
+		return
+	}
+
+	if data.Asf != nil {
+		diags.AddAttributeError(
+			path.Root("asf"),
+			"asf not supported",
+			fmt.Sprintf("asf is not supported for %s maps. Remove asf from this resource.", mapKind),
+		)
+	}
+
+	for i, rs := range data.RuleSets {
+		if rs.AppRules != nil {
+			diags.AddAttributeError(
+				path.Root("rule_sets").AtListIndex(i).AtName("app_rules"),
+				"app_rules not supported",
+				fmt.Sprintf("rule_sets.app_rules is not supported for %s maps. Remove app_rules from this rule_set.", mapKind),
+			)
+		}
+	}
 }
 
 // validateNilDropRules checks that no rule_set contains drop_rules, which are
@@ -827,6 +855,7 @@ func (em *ExclusionMap) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	validateNilPassRules(data.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&data, "exclusion", &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -908,6 +937,7 @@ func (em *ExclusionMap) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	validateNilPassRules(planData.RuleSets, &resp.Diagnostics)
+	validateAtsMapUnsupportedFields(&planData, "exclusion", &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}

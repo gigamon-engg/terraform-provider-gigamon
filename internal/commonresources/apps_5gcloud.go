@@ -267,38 +267,6 @@ func (r *App5GCloud) Metadata(ctx context.Context, req resource.MetadataRequest,
 }
 
 // modeImmutablePlanModifier is a custom plan modifier that prevents changes to the mode field after creation
-type modeImmutablePlanModifier struct{}
-
-// Description returns a plain text description of the plan modifier's behavior.
-func (m modeImmutablePlanModifier) Description(ctx context.Context) string {
-	return "mode cannot be changed once the app is configured"
-}
-
-// MarkdownDescription returns a markdown formatted description of the plan modifier's behavior.
-func (m modeImmutablePlanModifier) MarkdownDescription(ctx context.Context) string {
-	return "mode cannot be changed once the app is configured"
-}
-
-// PlanModifyString implements the plan modification logic.
-func (m modeImmutablePlanModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
-	// Do nothing if this is a new resource
-	if req.StateValue.IsNull() {
-		return
-	}
-
-	// Do nothing if the plan value equals the state value
-	if req.PlanValue.Equal(req.StateValue) {
-		return
-	}
-
-	// If the mode is changing, add an error
-	resp.Diagnostics.AddAttributeError(
-		req.Path,
-		"Mode Cannot Be Changed",
-		fmt.Sprintf("mode cannot be changed once the app is configured. Previous value: %s, new value: %s", req.StateValue.ValueString(), req.PlanValue.ValueString()),
-	)
-}
-
 // Schema defines the resource schema
 func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
@@ -522,7 +490,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 				},
 			},
 			"mode": schema.StringAttribute{
-				Description: "5G Cloud operating mode. Cannot be changed after creation.",
+				Description: "5G Cloud operating mode. Changing mode forces resource replacement.",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.OneOf(
@@ -538,7 +506,7 @@ func (r *App5GCloud) Schema(ctx context.Context, req resource.SchemaRequest, res
 					),
 				},
 				PlanModifiers: []planmodifier.String{
-					modeImmutablePlanModifier{},
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"alias": schema.StringAttribute{
