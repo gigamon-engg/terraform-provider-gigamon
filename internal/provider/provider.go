@@ -170,7 +170,7 @@ func (p *GigamonProvider) Resources(ctx context.Context) []func() resource.Resou
 		commonresources.NewAmx,
 		commonresources.NewAppViz,
 		commonresources.New5GCloud,
-		commonresources.New5GEvp,
+		commonresources.NewEvp5g,
 		commonresources.New5GSBI,
 		commonresources.New5GSBIIpMappings,
 		commonresources.NewPCapNG,
