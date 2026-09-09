@@ -1,0 +1,12 @@
+# Example variables for provider-install-verification
+# Copy values into terraform.tfvars for local runs.
+
+api_token = "<API_TOKEN>"
+esxi_host_ip_1 = "<ESXI_HOST_IP_1>"
+esxi_host_ip_2 = "<ESXI_HOST_IP_2>"
+fm_ip_address = "<FM_IP_ADDRESS>"
+image_file_path = "<IMAGE_FILE_PATH>"
+vcenter_address = "<VCENTER_ADDRESS>"
+vcenter_password = "<VCENTER_PASSWORD>"
+vcenter_username = "<VCENTER_USERNAME>"
+vm_admin_password = "<VM_ADMIN_PASSWORD>"
