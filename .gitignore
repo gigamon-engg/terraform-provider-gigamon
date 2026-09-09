@@ -19,3 +19,8 @@ gpg_errors
 # Ignore our binaries
 terraform-provider-gigamon
 terraform-provider-gigamon.exe
+openapi.fm.yaml
+.agents
+graphify-out
+
+*.tfvars
